@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>V3 AI | Control Center</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="logo">
+                <span class="v3">V3</span><span class="comms">COMMS</span>
+            </div>
+            <nav>
+                <ul>
+                    <li class="active" data-section="overview"><span class="icon">📊</span> Overview</li>
+                    <li data-section="playground"><span class="icon">🚀</span> AI Playground</li>
+                    <li data-section="docs"><span class="icon">📚</span> API Docs</li>
+                </ul>
+            </nav>
+            <div class="status-badge">
+                <div class="dot active"></div>
+                System Operational
+            </div>
+        </aside>
+
+        <main class="content">
+            <header class="top-nav">
+                <h1>Platform Overview</h1>
+                <div class="uptime-counter">Uptime: <span id="uptime-val">00:00:00</span></div>
+            </header>
+
+            <section id="overview" class="view">
+                <div class="stats-grid">
+                    <div class="stat-card glass">
+                        <h3>Active Plugins</h3>
+                        <p id="plugin-count">0</p>
+                    </div>
+                    <div class="stat-card glass">
+                        <h3>Ollama Link</h3>
+                        <p id="ollama-status">Checking...</p>
+                    </div>
+                </div>
+
+                <h2>Registered Plugins</h2>
+                <div id="plugin-list" class="plugin-grid">
+                    <!-- Plugin cards will be injected here -->
+                </div>
+            </section>
+
+            <section id="playground" class="view hidden">
+                <div class="playground-layout">
+                    <div class="tool-selector glass">
+                        <button class="tool-btn active" data-tool="chat">Multilingual Chat</button>
+                        <button class="tool-btn" data-tool="translate">Smart Translator</button>
+                    </div>
+
+                    <div id="chat-tool" class="tool-ui glass">
+                        <div id="chat-history" class="display-area">
+                            <div class="msg system">Welcome to V3 AI. Start a conversation in any language.</div>
+                        </div>
+                        <div class="input-row">
+                            <input type="text" id="chat-input" placeholder="Type Namaste or Anything...">
+                            <button id="send-chat">Send</button>
+                        </div>
+                    </div>
+
+                    <div id="translate-tool" class="tool-ui glass hidden">
+                        <div class="translation-controls">
+                            <select id="target-lang">
+                                <option value="Hindi">Hindi</option>
+                                <option value="Gujarati">Gujarati</option>
+                                <option value="Hinglish">Hinglish</option>
+                                <option value="English">English</option>
+                            </select>
+                        </div>
+                        <textarea id="translate-input" placeholder="Enter text to translate..."></textarea>
+                        <button id="run-translate">Translate</button>
+                        <div id="translation-output" class="display-area">
+                             <p class="placeholder">Result will appear here...</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="dashboard.js"></script>
+</body>
+</html>
