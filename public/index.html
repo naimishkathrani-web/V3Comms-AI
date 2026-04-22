@@ -17,6 +17,7 @@
                 <ul>
                     <li class="active" data-section="overview"><span class="icon">📊</span> Overview</li>
                     <li data-section="playground"><span class="icon">🚀</span> AI Playground</li>
+                    <li data-section="builder"><span class="icon">🔨</span> Keep Building</li>
                     <li data-section="docs"><span class="icon">📚</span> API Docs</li>
                 </ul>
             </nav>
@@ -47,6 +48,41 @@
                 <h2>Registered Plugins</h2>
                 <div id="plugin-list" class="plugin-grid">
                     <!-- Plugin cards will be injected here -->
+                </div>
+            </section>
+
+            <section id="builder" class="view hidden">
+                <div class="builder-layout">
+                    <div class="builder-chat glass">
+                        <div class="builder-header">
+                            <h3>🔨 V3 Builder</h3>
+                            <div class="builder-controls">
+                                <span id="builder-model-badge" class="model-badge-builder">...</span>
+                                <button id="builder-reset" class="builder-btn-sm" title="Reset conversation">🔄</button>
+                            </div>
+                        </div>
+                        <div id="builder-history" class="display-area builder-display">
+                            <div class="msg system">Hi! I'm V3 Builder. I can read/write files, run commands, and build features for you. Tell me what to build!</div>
+                        </div>
+                        <div class="input-row">
+                            <input type="text" id="builder-input" placeholder="e.g. Add a new API endpoint for...">
+                            <button id="send-builder">Build</button>
+                        </div>
+                    </div>
+                    <div class="builder-sidebar">
+                        <div class="builder-tasks glass">
+                            <h4>📋 Tasks</h4>
+                            <div id="builder-task-list" class="task-list">
+                                <p class="placeholder">No tasks yet</p>
+                            </div>
+                        </div>
+                        <div class="builder-terminal glass">
+                            <h4>💻 Terminal Output</h4>
+                            <div id="builder-terminal" class="terminal-output">
+                                <span class="terminal-dim">Waiting for commands...</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
 

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { config } from '../config/index.js';
 import { PluginManager } from '../core/PluginManager.js';
 import { ollamaService } from '../services/OllamaService.js';
+import { builderService } from '../services/BuilderService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -186,6 +187,58 @@ app.post('/translate', async (req: Request, res: Response) => {
  * POST /api/execute
  * Body: { plugin: 'ollama', action: 'chat', data: { ... } }
  */
+/**
+ * Builder Chat Endpoint — AI coding assistant with tool use
+ * POST /api/builder/chat
+ * Body: { message: string }
+ */
+app.post('/api/builder/chat', async (req: Request, res: Response) => {
+  const { message } = req.body;
+  if (!message) return res.status(400).json({ error: 'Message is required' });
+
+  try {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    for await (const chunk of builderService.chatStream(message)) {
+      if (chunk.startsWith('[META:')) {
+        try {
+          const meta = JSON.parse(chunk.slice(6, -1));
+          res.write(`data: ${JSON.stringify({ type: 'meta', model: meta.model, fallback: meta.fallback, originalModel: meta.originalModel })}\n\n`);
+        } catch {}
+      } else if (chunk.startsWith('[EXECUTING:')) {
+        res.write(`data: ${JSON.stringify({ type: 'tool_start', tool: chunk.trim() })}\n\n`);
+      } else if (chunk.startsWith('[TOOL_RESULT:')) {
+        const toolEnd = chunk.indexOf(']');
+        const toolName = chunk.slice(13, toolEnd);
+        const result = chunk.slice(toolEnd + 1);
+        res.write(`data: ${JSON.stringify({ type: 'tool_result', tool: toolName, result })}\n\n`);
+      } else {
+        res.write(`data: ${JSON.stringify({ type: 'content', chunk })}\n\n`);
+      }
+    }
+    res.write('data: [DONE]\n\n');
+    return res.end();
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/builder/tasks', (req: Request, res: Response) => {
+  res.json({ tasks: builderService.getTasks() });
+});
+
+app.get('/api/builder/files', (req: Request, res: Response) => {
+  const dir = (req.query.dir as string) || '.';
+  res.json({ tree: builderService.getFileTree(dir) });
+});
+
+app.post('/api/builder/reset', (req: Request, res: Response) => {
+  builderService.resetConversation();
+  res.json({ success: true });
+});
+
 app.post('/api/execute', async (req: Request, res: Response) => {
   const { plugin, action, data } = req.body;
 

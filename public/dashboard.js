@@ -242,6 +242,161 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     }
 
+    // Builder Logic
+    const builderInput = document.getElementById('builder-input');
+    const builderHistory = document.getElementById('builder-history');
+    const sendBuilderBtn = document.getElementById('send-builder');
+    const builderModelBadge = document.getElementById('builder-model-badge');
+    const builderTerminal = document.getElementById('builder-terminal');
+    const builderTaskList = document.getElementById('builder-task-list');
+    const builderResetBtn = document.getElementById('builder-reset');
+    let builderBusy = false;
+
+    async function handleBuilderChat() {
+        const message = builderInput.value.trim();
+        if (!message || builderBusy) return;
+        builderBusy = true;
+        sendBuilderBtn.disabled = true;
+        sendBuilderBtn.textContent = 'Working...';
+
+        appendBuilderMessage('user', message);
+        builderInput.value = '';
+
+        const assistantMsgDiv = appendBuilderMessage('assistant', '');
+        const textNode = assistantMsgDiv.childNodes[0];
+        let textContent = '';
+
+        try {
+            const response = await fetch(`${apiBase}/api/builder/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message })
+            });
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                const lines = decoder.decode(value).split('\n');
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6);
+                        if (data === '[DONE]') break;
+                        try {
+                            const parsed = JSON.parse(data);
+                            if (parsed.type === 'meta') {
+                                builderModelBadge.textContent = parsed.model;
+                                if (parsed.fallback) {
+                                    builderModelBadge.style.background = 'rgba(255,165,0,0.2)';
+                                    builderModelBadge.style.color = '#ffa500';
+                                }
+                            } else if (parsed.type === 'tool_start') {
+                                // Show tool execution indicator
+                                const toolEl = document.createElement('div');
+                                toolEl.className = 'tool-execution';
+                                toolEl.textContent = `⚡ ${parsed.tool}`;
+                                assistantMsgDiv.appendChild(toolEl);
+                                // Also log to terminal
+                                appendTerminal(`> ${parsed.tool}`);
+                            } else if (parsed.type === 'tool_result') {
+                                // Show tool result in a collapsible block
+                                const resultEl = document.createElement('div');
+                                resultEl.className = 'tool-result-block';
+                                const truncated = parsed.result.length > 500
+                                    ? parsed.result.slice(0, 500) + '...'
+                                    : parsed.result;
+                                resultEl.textContent = truncated;
+                                assistantMsgDiv.appendChild(resultEl);
+                                // Log to terminal
+                                appendTerminal(parsed.result);
+                                // Refresh tasks
+                                loadBuilderTasks();
+                            } else if (parsed.type === 'content') {
+                                textContent += parsed.chunk;
+                                textNode.textContent = textContent;
+                                builderHistory.scrollTop = builderHistory.scrollHeight;
+                            }
+                        } catch (e) {}
+                    }
+                }
+            }
+        } catch (e) {
+            textNode.textContent = 'Error connecting to builder.';
+        } finally {
+            builderBusy = false;
+            sendBuilderBtn.disabled = false;
+            sendBuilderBtn.textContent = 'Build';
+        }
+    }
+
+    function appendBuilderMessage(role, text) {
+        const div = document.createElement('div');
+        div.className = `msg ${role}`;
+        const textNode = document.createTextNode(text);
+        div.appendChild(textNode);
+        builderHistory.appendChild(div);
+        builderHistory.scrollTop = builderHistory.scrollHeight;
+        return div;
+    }
+
+    function appendTerminal(text) {
+        // Clear placeholder if present
+        const placeholder = builderTerminal.querySelector('.terminal-dim');
+        if (placeholder) placeholder.remove();
+
+        const line = document.createElement('span');
+        line.textContent = text + '\n';
+        builderTerminal.appendChild(line);
+        builderTerminal.scrollTop = builderTerminal.scrollHeight;
+
+        // Keep terminal trimmed to last 100 lines
+        while (builderTerminal.childElementCount > 100) {
+            builderTerminal.removeChild(builderTerminal.firstChild);
+        }
+    }
+
+    async function loadBuilderTasks() {
+        try {
+            const res = await fetch(`${apiBase}/api/builder/tasks`);
+            const data = await res.json();
+            const tasks = data.tasks || [];
+
+            if (tasks.length === 0) {
+                builderTaskList.innerHTML = '<p class="placeholder">No tasks yet</p>';
+                return;
+            }
+
+            builderTaskList.innerHTML = '';
+            tasks.forEach(t => {
+                const item = document.createElement('div');
+                item.className = `task-item ${t.status}`;
+                item.innerHTML = `
+                    <div class="task-desc">${t.description}</div>
+                    <div class="task-status">${t.status}${t.result ? ': ' + t.result.slice(0, 60) : ''}</div>
+                `;
+                builderTaskList.appendChild(item);
+            });
+        } catch (e) {
+            console.error('Failed to load builder tasks', e);
+        }
+    }
+
+    sendBuilderBtn.addEventListener('click', handleBuilderChat);
+    builderInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleBuilderChat(); });
+
+    builderResetBtn.addEventListener('click', async () => {
+        if (!confirm('Reset builder conversation?')) return;
+        await fetch(`${apiBase}/api/builder/reset`, { method: 'POST' });
+        builderHistory.innerHTML = '<div class="msg system">Conversation reset. Ready for new tasks!</div>';
+        builderTerminal.innerHTML = '<span class="terminal-dim">Waiting for commands...</span>';
+        builderModelBadge.textContent = '...';
+        builderModelBadge.style.background = 'rgba(0,255,136,0.15)';
+        builderModelBadge.style.color = '#00ff88';
+    });
+
     // Initial Load
     setInterval(updateStatus, 1000);
     updateStatus();
