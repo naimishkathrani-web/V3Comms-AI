@@ -1,6 +1,6 @@
 import { exec } from 'child_process';
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync, unlinkSync } from 'fs';
-import { join, relative } from 'path';
+import { join } from 'path';
 import { ollamaService } from './OllamaService.js';
 import { config } from '../config/index.js';
 
@@ -14,55 +14,54 @@ export interface BuilderTask {
 
 const REPO_ROOT = join(import.meta.dirname, '../..');
 
-const BUILDER_SYSTEM_PROMPT = `You are "V3 Builder", an AI coding assistant embedded in the V3Comms-AI dashboard. You can read, write, and modify files in the project, run terminal commands, and manage build tasks.
+// Builder model: qwen2.5:1.5b is a good balance of speed + instruction following on CPU
+// Override with BUILDER_MODEL env var if you have a GPU or want a smarter model
+const BUILDER_MODEL = process.env.BUILDER_MODEL || 'qwen2.5:1.5b';
 
-AVAILABLE TOOLS — use these by outputting exactly the format shown:
+const BUILDER_SYSTEM_PROMPT = `You are V3 Builder, an AI coding assistant. You modify code in a Node.js/TypeScript project.
 
-1. Read a file:
-   [TOOL:read_file]{"path":"relative/path/to/file"}
+You have these tools. To call a tool, write EXACTLY:
+TOOL:tool_name {json arguments}
 
-2. Write/create a file:
-   [TOOL:write_file]{"path":"relative/path/to/file","content":"file contents here"}
-
-3. List files in a directory:
-   [TOOL:list_files]{"path":"relative/path/to/dir"}
-
-4. Delete a file:
-   [TOOL:delete_file]{"path":"relative/path/to/file"}
-
-5. Run a terminal command:
-   [TOOL:run_command]{"command":"the shell command"}
-
-6. Create a build task:
-   [TOOL:create_task]{"description":"what to build"}
-
-7. Update task status:
-   [TOOL:update_task]{"id":"task_id","status":"completed|failed","result":"outcome"}
+Tools:
+- TOOL:read_file {"path":"src/api/server.ts"} — read a file
+- TOOL:patch_file {"path":"public/index.html","search":"exact text to find","replace":"replacement text"} — find and replace text in a file
+- TOOL:write_file {"path":"src/new.ts","content":"code"} — create a NEW file (use patch_file for existing files)
+- TOOL:list_files {"path":"src"} — list directory contents
+- TOOL:run_command {"command":"npx tsc --noEmit"} — run a shell command
+- TOOL:delete_file {"path":"src/old.ts"} — delete a file
 
 RULES:
-- Always use RELATIVE paths from the project root (e.g., "src/services/NewService.ts")
-- Before writing code, read existing files to understand the codebase
-- After making changes, run "npx tsc --noEmit" to verify the build
-- If the build fails, read the error, fix it, and verify again
-- You can restart the dev server with: npx tsx watch src/api/server.ts
-- Keep responses concise — focus on the code
-- When done with a task, mark it completed
-- If something fails, explain briefly and try an alternative approach
-- Never modify node_modules or .env files
+- Always use TOOL:name {json} format — nothing else
+- Always READ a file before modifying it
+- Use patch_file for EXISTING files — it finds exact text and replaces it
+- Use write_file only for creating NEW files
+- After writing code, run TOOL:run_command {"command":"npx tsc --noEmit"}
+- If build fails, read the error, fix it, and verify again
+- Use RELATIVE paths from project root
+- Keep responses brief
+- Never modify node_modules or .env
+- NEVER try to kill the server process or restart it
 
-Respond naturally between tool calls. When you need to use a tool, output the exact format above.`;
+Example:
+User: Add a Test button to index.html sidebar
+Assistant:
+TOOL:read_file {"path":"public/index.html"}
+TOOL:patch_file {"path":"public/index.html","search":"<li data-section=\"docs\">","replace":"<li data-section=\"test\"><span class=\"icon\">🧪</span> Test</li>\n<li data-section=\"docs\">"}
+TOOL:run_command {"command":"npx tsc --noEmit"}
+Done!`;
 
 export class BuilderService {
   private tasks: Map<string, BuilderTask> = new Map();
   private conversationHistory: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
   private maxHistoryTurns = 20;
+  private contextInjected = false;
 
   constructor() {
     this.conversationHistory.push({ role: 'system', content: BUILDER_SYSTEM_PROMPT });
   }
 
   private resolvePath(relativePath: string): string {
-    // Prevent path traversal
     const resolved = join(REPO_ROOT, relativePath);
     if (!resolved.startsWith(REPO_ROOT)) {
       throw new Error('Path traversal not allowed');
@@ -75,12 +74,40 @@ export class BuilderService {
   }
 
   /**
+   * Build a quick project context string so the model knows the real file structure.
+   */
+  private buildProjectContext(): string {
+    const topLevel = this.listFiles('.');
+    return `Project file structure:\n${topLevel}\n\nTech stack: Node.js, TypeScript, Express, Ollama SDK, vanilla JS frontend.`;
+  }
+
+  private listFiles(dir: string): string {
+    const absPath = this.resolvePath(dir);
+    if (!existsSync(absPath)) return '(not found)';
+    try {
+      const entries = readdirSync(absPath, { withFileTypes: true });
+      return entries
+        .filter(e => !e.name.startsWith('.') && e.name !== 'node_modules' && e.name !== 'dist')
+        .map(e => {
+          if (e.isDirectory()) {
+            return `📁 ${e.name}/`;
+          }
+          return `📄 ${e.name}`;
+        })
+        .join('\n');
+    } catch {
+      return '(error reading)';
+    }
+  }
+
+  /**
    * Execute a tool call and return the result.
    */
   private executeTool(toolName: string, args: any): string {
     try {
       switch (toolName) {
         case 'read_file': {
+          if (!args.path) return 'Error: path is required';
           const absPath = this.resolvePath(this.sanitizePath(args.path));
           if (!existsSync(absPath)) return `Error: File not found: ${args.path}`;
           const content = readFileSync(absPath, 'utf-8');
@@ -90,12 +117,40 @@ export class BuilderService {
         }
 
         case 'write_file': {
+          if (!args.path || args.content === undefined) return 'Error: path and content are required';
           const absPath = this.resolvePath(this.sanitizePath(args.path));
-          // Ensure parent directory exists
           const dir = join(absPath, '..');
           if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
           writeFileSync(absPath, args.content, 'utf-8');
           return `Successfully wrote ${args.content.length} chars to ${args.path}`;
+        }
+
+        case 'patch_file': {
+          if (!args.path || !args.search || args.replace === undefined) {
+            return 'Error: path, search, and replace are required';
+          }
+          const absPath = this.resolvePath(this.sanitizePath(args.path));
+          if (!existsSync(absPath)) return `Error: File not found: ${args.path}`;
+          const content = readFileSync(absPath, 'utf-8');
+          if (!content.includes(args.search)) {
+            // Try to find a close match
+            const lines = content.split('\n');
+            const searchLines = args.search.split('\n');
+            let found = false;
+            for (let i = 0; i <= lines.length - searchLines.length; i++) {
+              const slice = lines.slice(i, i + searchLines.length).join('\n');
+              if (slice.trim() === args.search.trim()) {
+                // Found with whitespace difference — apply with original whitespace
+                lines.splice(i, searchLines.length, ...args.replace.split('\n'));
+                writeFileSync(absPath, lines.join('\n'), 'utf-8');
+                return `Patched ${args.path} (whitespace-tolerant match at line ${i + 1})`;
+              }
+            }
+            return `Error: Search text not found in ${args.path}. Try reading the file again and use exact text.`;
+          }
+          const newContent = content.replace(args.search, args.replace);
+          writeFileSync(absPath, newContent, 'utf-8');
+          return `Patched ${args.path}: replaced ${args.search.length} chars with ${args.replace.length} chars`;
         }
 
         case 'list_files': {
@@ -110,6 +165,7 @@ export class BuilderService {
         }
 
         case 'delete_file': {
+          if (!args.path) return 'Error: path is required';
           const absPath = this.resolvePath(this.sanitizePath(args.path));
           if (!existsSync(absPath)) return `Error: File not found: ${args.path}`;
           unlinkSync(absPath);
@@ -117,33 +173,12 @@ export class BuilderService {
         }
 
         case 'run_command': {
-          // executeTool is sync, but run_command needs async
-          // We handle this in the chat loop by calling runCommandAsync directly
-          return `[Use run_command in chat loop - async execution required]`;
-        }
-
-        case 'create_task': {
-          const id = `task_${Date.now()}`;
-          const task: BuilderTask = {
-            id,
-            description: args.description,
-            status: 'pending',
-            createdAt: Date.now(),
-          };
-          this.tasks.set(id, task);
-          return `Created task ${id}: ${args.description}`;
-        }
-
-        case 'update_task': {
-          const task = this.tasks.get(args.id);
-          if (!task) return `Error: Task ${args.id} not found`;
-          task.status = args.status;
-          task.result = args.result;
-          return `Task ${args.id} updated to ${args.status}`;
+          // Handled in chat loop via runCommandAsync
+          return '[async execution required — handled in chat loop]';
         }
 
         default:
-          return `Error: Unknown tool "${toolName}"`;
+          return `Error: Unknown tool "${toolName}". Available tools: read_file, write_file, list_files, run_command, delete_file`;
       }
     } catch (error: any) {
       return `Error executing ${toolName}: ${error.message}`;
@@ -154,9 +189,21 @@ export class BuilderService {
    * Run a shell command asynchronously with a timeout.
    */
   private runCommandAsync(command: string): Promise<string> {
+    // Block commands that could kill the server itself
+    const blocked = ['taskkill', 'Stop-Process', 'kill ', 'pkill', 'shutdown'];
+    const cmdLower = command.toLowerCase();
+    for (const b of blocked) {
+      if (cmdLower.includes(b.toLowerCase())) {
+        // Allow killing OTHER processes on port 3000, but not the current PID
+        if (cmdLower.includes('3000') || cmdLower.includes('node.exe')) {
+          return Promise.resolve(`Blocked: Cannot kill node processes (would kill the server). Use a separate terminal to restart.`);
+        }
+      }
+    }
+
     return new Promise((resolve) => {
-      const timeout = 30000;
-      exec(command, { cwd: REPO_ROOT, timeout }, (error, stdout, stderr) => {
+      const timeout = 60000; // 60s for builds
+      exec(command, { cwd: REPO_ROOT, timeout, shell: 'powershell.exe' }, (error, stdout, stderr) => {
         let output = '';
         if (stdout) output += stdout;
         if (stderr) output += (output ? '\n' : '') + stderr;
@@ -169,22 +216,63 @@ export class BuilderService {
 
   /**
    * Parse tool calls from model output.
-   * Returns array of { toolName, args, raw } objects.
+   * Supports multiple formats since small models are inconsistent:
+   *   TOOL:name {json}
+   *   [TOOL:name]{json}
+   *   <<TOOL:name>>json<</TOOL>>
    */
   private parseToolCalls(text: string): Array<{ toolName: string; args: any; raw: string }> {
-    const toolRegex = /\[TOOL:(\w+)\]([\s\S]*?)(?=\[TOOL:|\n\n|$)/g;
     const calls: Array<{ toolName: string; args: any; raw: string }> = [];
-    let match;
+    const validTools = new Set(['read_file', 'write_file', 'patch_file', 'list_files', 'run_command', 'delete_file']);
 
-    while ((match = toolRegex.exec(text)) !== null) {
-      const toolName = match[1];
-      const argsStr = match[2].trim();
-      try {
-        const args = JSON.parse(argsStr);
-        calls.push({ toolName, args, raw: match[0] });
-      } catch {
-        // If JSON parse fails, skip this tool call
-        calls.push({ toolName, args: {}, raw: match[0] });
+    // Find all tool call candidates using a prefix regex, then extract balanced JSON
+    const toolPrefixes = [
+      /TOOL:(\w+)\s*/g,       // Format: TOOL:name {json}
+      /\[TOOL:(\w+)\]\s*/g,   // Format: [TOOL:name]{json}
+    ];
+
+    for (const prefixRegex of toolPrefixes) {
+      let prefixMatch;
+      while ((prefixMatch = prefixRegex.exec(text)) !== null) {
+        const toolName = prefixMatch[1];
+        if (!validTools.has(toolName)) continue;
+
+        // Extract balanced JSON starting from the position after the prefix
+        const jsonStart = prefixMatch.index + prefixMatch[0].length;
+        const jsonStr = text.slice(jsonStart);
+        const extracted = this.extractBalancedJson(jsonStr);
+
+        if (extracted) {
+          try {
+            const args = JSON.parse(extracted.json);
+            calls.push({ toolName, args, raw: text.slice(prefixMatch.index, jsonStart + extracted.endIndex) });
+          } catch {
+            // Try fixing common JSON issues
+            const fixed = extracted.json.replace(/'/g, '"');
+            try {
+              calls.push({ toolName, args: JSON.parse(fixed), raw: text.slice(prefixMatch.index, jsonStart + extracted.endIndex) });
+            } catch {
+              calls.push({ toolName, args: { _raw: extracted.json }, raw: text.slice(prefixMatch.index, jsonStart + extracted.endIndex) });
+            }
+          }
+        }
+      }
+      if (calls.length > 0) break; // Use first format that matches
+    }
+
+    // Format 3: <<TOOL:name>>json<</TOOL>> (only if no other format matched)
+    if (calls.length === 0) {
+      const fmt3 = /<<TOOL:(\w+)>>([\s\S]*?)<<\/TOOL>>/g;
+      let match;
+      while ((match = fmt3.exec(text)) !== null) {
+        const toolName = match[1];
+        if (!validTools.has(toolName)) continue;
+        const argsStr = match[2].trim();
+        try {
+          calls.push({ toolName, args: JSON.parse(argsStr), raw: match[0] });
+        } catch {
+          calls.push({ toolName, args: { _raw: argsStr }, raw: match[0] });
+        }
       }
     }
 
@@ -192,11 +280,67 @@ export class BuilderService {
   }
 
   /**
+   * Extract balanced JSON from a string starting with '{'.
+   * Handles nested braces and string escaping.
+   */
+  private extractBalancedJson(text: string): { json: string; endIndex: number } | null {
+    if (!text.startsWith('{')) return null;
+
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+
+      if (escape) {
+        escape = false;
+        continue;
+      }
+
+      if (ch === '\\' && inString) {
+        escape = true;
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (inString) continue;
+
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          return { json: text.slice(0, i + 1), endIndex: i + 1 };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Main chat loop with tool use.
-   * Sends user message, lets model respond, executes tools, feeds results back.
-   * Max 5 tool-use rounds to prevent infinite loops.
+   * Max 8 tool-use rounds to allow multi-step builds.
    */
   async *chatStream(userMessage: string): AsyncGenerator<string> {
+    // Inject project context on first message
+    if (!this.contextInjected) {
+      this.contextInjected = true;
+      const context = this.buildProjectContext();
+      this.conversationHistory.push({
+        role: 'user',
+        content: `[SYSTEM CONTEXT — this is the real project structure, trust this over any assumptions]:\n${context}`,
+      });
+      this.conversationHistory.push({
+        role: 'assistant',
+        content: 'Understood. I will use the actual project structure shown above for all operations.',
+      });
+    }
+
     // Add user message to history
     this.conversationHistory.push({ role: 'user', content: userMessage });
 
@@ -209,18 +353,20 @@ export class BuilderService {
       ];
     }
 
-    const maxRounds = 5;
+    const maxRounds = 8;
 
     for (let round = 0; round < maxRounds; round++) {
-      // Get model response with fallback
+      // Get model response — use builder-specific model (not fallback chain)
       let fullResponse = '';
 
-      for await (const chunk of ollamaService.chatStreamWithFallback(
+      // Use the builder model directly for better instruction-following
+      const stream = ollamaService.chatStreamWithFallback(
         this.conversationHistory,
-        {}
-      )) {
+        { model: BUILDER_MODEL }
+      );
+
+      for await (const chunk of stream) {
         if (chunk.startsWith('[META:')) {
-          // Pass meta info to client
           yield chunk;
         } else {
           fullResponse += chunk;
@@ -235,7 +381,6 @@ export class BuilderService {
       const toolCalls = this.parseToolCalls(fullResponse);
 
       if (toolCalls.length === 0) {
-        // No tools to execute — we're done
         return;
       }
 
@@ -246,46 +391,40 @@ export class BuilderService {
 
         let result: string;
         if (call.toolName === 'run_command') {
-          result = await this.runCommandAsync(call.args.command || '');
+          const cmd = call.args.command || call.args._raw || '';
+          if (!cmd) {
+            result = 'Error: command is required for run_command';
+          } else {
+            result = await this.runCommandAsync(cmd);
+          }
         } else {
           result = this.executeTool(call.toolName, call.args);
         }
 
         toolResults.push(`[Result of ${call.toolName}]: ${result}`);
-
-        // Yield tool result to client
         yield `[TOOL_RESULT:${call.toolName}]${result}\n`;
       }
 
-      // Feed tool results back as a user message for the next round
+      // Feed tool results back
       const resultsMessage = toolResults.join('\n\n');
       this.conversationHistory.push({
         role: 'user',
-        content: `Here are the results of the tool calls:\n\n${resultsMessage}\n\nContinue based on these results. If the task is complete, summarize what was done. If there are errors, fix them.`,
+        content: `Tool results:\n\n${resultsMessage}\n\nIf the task is done, say "Done!" and summarize. If there are errors, fix them with more tool calls. If build passed, you're done.`,
       });
     }
 
-    // If we hit max rounds, yield a notice
-    yield '\n[Max tool-use rounds reached. Continuing the conversation will allow more operations.]';
+    yield '\n[Max tool-use rounds reached. Send another message to continue.]';
   }
 
-  /**
-   * Get all tasks.
-   */
   getTasks(): BuilderTask[] {
     return Array.from(this.tasks.values()).sort((a, b) => b.createdAt - a.createdAt);
   }
 
-  /**
-   * Clear conversation history.
-   */
   resetConversation(): void {
     this.conversationHistory = [{ role: 'system', content: BUILDER_SYSTEM_PROMPT }];
+    this.contextInjected = false;
   }
 
-  /**
-   * Get file tree for the project.
-   */
   getFileTree(dir: string = '.', depth: number = 0, maxDepth: number = 3): any[] {
     if (depth > maxDepth) return [];
     const absPath = this.resolvePath(dir);
