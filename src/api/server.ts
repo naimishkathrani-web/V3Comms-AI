@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from '../config/index.js';
 import { PluginManager } from '../core/PluginManager.js';
+import { ollamaService } from '../services/OllamaService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -76,10 +77,18 @@ app.get('/api/plugins', (req: Request, res: Response) => {
   res.json(pluginManager.listPlugins());
 });
 
+app.get('/api/fallback-chain', (req: Request, res: Response) => {
+  res.json({
+    chain: ollamaService.getFallbackChainInfo(),
+    defaultModel: config.ollama.model,
+  });
+});
+
 /**
- * Dedicated Chat Endpoint (SaaS-friendly)
+ * Dedicated Chat Endpoint with Model Fallback
  * POST /chat
- * Body: { message: string, history?: [], context?: string }
+ * Body: { message: string, history?: [], context?: string, model?: string, stream?: boolean }
+ * Uses fallback chain by default. Specify model to skip fallback.
  */
 app.post('/chat', async (req: Request, res: Response) => {
   const { message, history, context, model, stream } = req.body;
@@ -97,19 +106,53 @@ app.post('/chat', async (req: Request, res: Response) => {
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
 
-      for await (const chunk of pluginManager.executeStream('agent', 'chat', { messages, context, model })) {
-        res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+      // Use fallback streaming — tries fastest model first
+      for await (const chunk of ollamaService.chatStreamWithFallback(
+        [{ role: 'system', content: getSystemPrompt(context) }, ...messages],
+        { model }
+      )) {
+        // Parse META chunks to send model info to client
+        if (chunk.startsWith('[META:')) {
+          try {
+            const meta = JSON.parse(chunk.slice(6, -1));
+            res.write(`data: ${JSON.stringify({ type: 'meta', model: meta.model, fallback: meta.fallback, originalModel: meta.originalModel })}\n\n`);
+          } catch {}
+        } else {
+          res.write(`data: ${JSON.stringify({ type: 'content', chunk })}\n\n`);
+        }
       }
       res.write('data: [DONE]\n\n');
       return res.end();
     }
 
-    const result = await pluginManager.execute('agent', 'chat', { messages, context, model });
-    res.json({ success: true, response: result.response, model: result.model });
+    // Buffered response with fallback
+    const result = await ollamaService.chatWithFallback(
+      [{ role: 'system', content: getSystemPrompt(context) }, ...messages],
+      { model }
+    );
+    res.json({
+      success: true,
+      response: result.content,
+      model: result.model,
+      fallbackUsed: result.fallbackUsed,
+      originalModel: result.originalModel,
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+function getSystemPrompt(context?: string): string {
+  const base = `You are "V3 AI", a friendly, polite, and helpful digital assistant specialized for Indian users.
+Guidelines:
+1. Tone: Warm, respectful, and culturally aware (use "Ji", "Namaste", "Hello Bhai", etc. appropriately).
+2. Language: You are multilingual. Auto-detect the user's language and respond in the same.
+3. Hinglish: If the user speaks in Hinglish, respond in natural, fluent Hinglish.
+4. Support/Marketing: While your current role is a general assistant, keep your responses structured so you can provide helpful information about products or support issues if asked.
+5. Knowledge: You have deep knowledge of Indian culture, festivals, and geography.
+6. Concision: Be helpful but don't be overly wordy unless asked.`;
+  return context ? base + `\nContext: ${context}` : base;
+}
 
 app.post('/translate', async (req: Request, res: Response) => {
   const { text, targetLang, sourceLang, model, stream } = req.body;

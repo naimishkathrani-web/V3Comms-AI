@@ -96,6 +96,13 @@ document.addEventListener('DOMContentLoaded', () => {
         chatInput.value = '';
 
         const assistantMsgDiv = appendMessage('assistant', '');
+        const modelBadge = document.createElement('span');
+        modelBadge.className = 'model-badge';
+        modelBadge.style.cssText = 'display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;margin-left:8px;vertical-align:middle;';
+        modelBadge.style.background = 'rgba(0,255,136,0.15)';
+        modelBadge.style.color = '#00ff88';
+        modelBadge.textContent = '...';
+        assistantMsgDiv.appendChild(modelBadge);
         
         try {
             const response = await fetch(`${apiBase}/chat`, {
@@ -106,6 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
+            let textContent = '';
             
             while (true) {
                 const { value, done } = await reader.read();
@@ -117,9 +125,25 @@ document.addEventListener('DOMContentLoaded', () => {
                         const data = line.slice(6);
                         if (data === '[DONE]') break;
                         try {
-                            const { chunk } = JSON.parse(data);
-                            assistantMsgDiv.textContent += chunk;
-                            chatHistory.scrollTop = chatHistory.scrollHeight;
+                            const parsed = JSON.parse(data);
+                            if (parsed.type === 'meta') {
+                                // Model info from fallback system
+                                modelBadge.textContent = parsed.model;
+                                if (parsed.fallback) {
+                                    modelBadge.style.background = 'rgba(255,165,0,0.2)';
+                                    modelBadge.style.color = '#ffa500';
+                                    modelBadge.title = `Fallback from ${parsed.originalModel}`;
+                                }
+                            } else if (parsed.type === 'content') {
+                                textContent += parsed.chunk;
+                                assistantMsgDiv.childNodes[0].textContent = textContent;
+                                chatHistory.scrollTop = chatHistory.scrollHeight;
+                            } else if (parsed.chunk) {
+                                // Legacy format fallback
+                                textContent += parsed.chunk;
+                                assistantMsgDiv.childNodes[0].textContent = textContent;
+                                chatHistory.scrollTop = chatHistory.scrollHeight;
+                            }
                         } catch (e) {}
                     }
                 }
@@ -132,7 +156,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function appendMessage(role, text) {
         const div = document.createElement('div');
         div.className = `msg ${role}`;
-        div.textContent = text;
+        const textNode = document.createTextNode(text);
+        div.appendChild(textNode);
         chatHistory.appendChild(div);
         chatHistory.scrollTop = chatHistory.scrollHeight;
         return div;
@@ -193,19 +218,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const docsView = document.getElementById('docs');
     if (docsView) {
         docsView.innerHTML = `
-            <h2>High-Performance Guide</h2>
+            <h2>Model Fallback System</h2>
             <div class="glass" style="padding: 20px; margin-top: 20px;">
-                <h4 style="color: var(--accent-secondary)">🚀 Recommendation for Speed</h4>
+                <h4 style="color: var(--accent-secondary)">⚡ Auto-Fallback for Speed</h4>
                 <p style="margin-top: 10px; font-size: 14px; color: var(--text-dim)">
-                    For the fastest responses, we recommend switching to smaller, optimized models in Ollama:
+                    V3 AI automatically tries the fastest model first. If it doesn't respond within its timeout, it falls back to the next model in the chain:
                 </p>
-                <ul style="margin: 15px 0 0 20px; font-size: 14px; color: var(--text-dim)">
-                    <li><strong>Llama 3.2 (1B/3B)</strong>: <code>ollama run llama3.2:1b</code></li>
-                    <li><strong>Phi-3.5 Mini</strong>: <code>ollama run phi3.5:latest</code></li>
-                    <li><strong>Qwen 2.5 (3B)</strong>: <code>ollama run qwen2.5:3b</code></li>
-                </ul>
+                <ol style="margin: 15px 0 0 20px; font-size: 14px; color: var(--text-dim)">
+                    <li><strong>llama3.2:1b</strong> — Fastest (1B params, ~3s timeout)</li>
+                    <li><strong>qwen2.5:1.5b</strong> — Fast (1.5B params, ~3s timeout)</li>
+                    <li><strong>tinyllama</strong> — Ultra-light (1.1B params, ~2s timeout)</li>
+                    <li><strong>gemma2:2b</strong> — Balanced (2B params, ~3s timeout)</li>
+                    <li><strong>phi3.5</strong> — Quality (3.8B params, ~4s timeout)</li>
+                    <li><strong>mistral</strong> — Best quality (7B params, ~5s timeout)</li>
+                </ol>
                 <p style="margin-top: 15px; font-size: 14px; color: var(--accent-primary)">
-                    💡 We have enabled <strong>Server-Sent Events (SSE)</strong> for real-time streaming!
+                    💡 Green badge = primary model &nbsp;|&nbsp; Orange badge = fallback used
+                </p>
+                <p style="margin-top: 10px; font-size: 13px; color: var(--text-dim)">
+                    All models are preloaded into memory for instant switching. Configure via <code>OLLAMA_FALLBACK_CHAIN</code> in <code>.env</code>.
                 </p>
             </div>
         `;

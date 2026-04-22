@@ -13,6 +13,8 @@ export default class OllamaPlugin extends BasePlugin {
     const isConnected = await ollamaService.checkConnection();
     if (isConnected) {
       console.log('[OllamaPlugin] Successfully linked to OllamaService.');
+      // Preload model into memory to eliminate cold-start delay
+      await ollamaService.preloadModels();
     } else {
       console.warn('[OllamaPlugin] Could not connect to Ollama service during init.');
     }
