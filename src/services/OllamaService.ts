@@ -97,22 +97,30 @@ export class OllamaService {
   public async *chatStreamWithFallback(messages: ChatMessage[], options: { model?: string } = {}): AsyncGenerator<string> {
     await this.acquireSlot();
     try {
-      // Specific model requested = no fallback
-      if (options.model) {
-        const response = await this.client.chat({
-          model: options.model,
-          messages,
-          stream: true,
-          keep_alive: config.ollama.keepAlive,
-          options: this.buildOptions(),
-        });
-        for await (const part of response) {
-          if (part.message?.content) yield part.message.content;
-        }
-        return;
-      }
+      const fullChain = this.getAvailableFallbackChain();
 
-      const chain = this.getAvailableFallbackChain();
+      // If a specific model is requested, find it in the fallback chain
+      // and use the chain from that point onward (smarter start, still falls back)
+      let chain = fullChain;
+      if (options.model) {
+        const startIdx = fullChain.findIndex(e => e.model === options.model);
+        if (startIdx >= 0) {
+          chain = fullChain.slice(startIdx);
+        } else {
+          // Model not in chain — use it directly with no fallback
+          const response = await this.client.chat({
+            model: options.model,
+            messages,
+            stream: true,
+            keep_alive: config.ollama.keepAlive,
+            options: this.buildOptions(),
+          });
+          for await (const part of response) {
+            if (part.message?.content) yield part.message.content;
+          }
+          return;
+        }
+      }
       let lastError: Error | null = null;
       const originalModel = chain[0]?.model || this.defaultModel;
       let fallbackUsed = false;

@@ -14,9 +14,10 @@ export interface BuilderTask {
 
 const REPO_ROOT = join(import.meta.dirname, '../..');
 
-// Builder model: qwen2.5:1.5b is a good balance of speed + instruction following on CPU
-// Override with BUILDER_MODEL env var if you have a GPU or want a smarter model
-const BUILDER_MODEL = process.env.BUILDER_MODEL || 'qwen2.5:1.5b';
+// Builder starts from a smarter model in the fallback chain.
+// If phi3.5 is too slow, it auto-falls back to mistral.
+// Override with BUILDER_MODEL env var (e.g., gemma2:2b for faster, mistral:latest for best)
+const BUILDER_MODEL = process.env.BUILDER_MODEL || 'phi3.5:latest';
 
 const BUILDER_SYSTEM_PROMPT = `You are V3 Builder, an AI coding assistant. You modify code in a Node.js/TypeScript project.
 
