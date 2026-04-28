@@ -835,8 +835,18 @@ export class VectorService {
     console.log('[VectorService] Disconnected');
   }
 
+  /**
+   * Check if PostgreSQL is connected.
+   */
   isConnected(): boolean {
     return this.connected;
+  }
+
+  /**
+   * Get the PostgreSQL pool (for sharing with other services).
+   */
+  getPool(): Pool | null {
+    return this.pool;
   }
 
   private normalizeKnowledgeIntakeRecord(row: any): KnowledgeIntakeRecord {

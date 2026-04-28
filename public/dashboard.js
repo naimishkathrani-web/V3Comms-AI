@@ -377,6 +377,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('project', document.getElementById('file-project').value);
         formData.append('commodity', document.getElementById('file-commodity').value);
         formData.append('tags', document.getElementById('file-tags').value);
+        formData.append('embeddingModel', document.getElementById('file-embedding-model').value);
 
         try {
             const res = await fetch(`${apiBase}/api/knowledge/intake/upload`, {
@@ -405,6 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
             project: document.getElementById('url-project').value.trim(),
             commodity: document.getElementById('url-commodity').value.trim(),
             tags: document.getElementById('url-tags').value,
+            embeddingModel: document.getElementById('url-embedding-model').value,
         };
         if (!payload.url) {
             alert('Enter a URL first.');
@@ -686,7 +688,196 @@ document.addEventListener('DOMContentLoaded', () => {
     loadBuilderTasks();
     renderDraft();
     initModelsSection();
+    initExecutionSection();
 });
+
+/* ── Execution Module (Project-Scoped RAG Chat) ── */
+
+let currentProjectId = null;
+let currentSessionId = null;
+
+function initExecutionSection() {
+    const createProjectBtn = document.getElementById('create-project-btn');
+    const executionChatInput = document.getElementById('execution-chat-input');
+    const executionSendBtn = document.getElementById('execution-send-chat');
+
+    createProjectBtn?.addEventListener('click', () => {
+        const name = prompt('Enter project name:');
+        if (!name) return;
+        fetch('/api/projects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ node_type: 'project', name }),
+        }).then(r => r.json()).then(data => {
+            if (data.success) loadProjects();
+        });
+    });
+
+    executionChatInput?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleExecutionChat();
+    });
+    executionSendBtn?.addEventListener('click', handleExecutionChat);
+
+    loadProjects();
+}
+
+async function loadProjects() {
+    try {
+        const res = await fetch('/api/projects');
+        const data = await res.json();
+        if (!data.success) return;
+
+        const container = document.getElementById('projects-list');
+        if (!container) return;
+
+        if (data.projects.length === 0) {
+            container.innerHTML = '<p class="placeholder">No projects yet. Create one to start.</p>';
+            return;
+        }
+
+        container.innerHTML = data.projects.map(p => `
+            <div class="project-item ${currentProjectId === p.id ? 'active' : ''}" data-project-id="${p.id}">
+                <div class="project-item-header">
+                    <span class="icon">📁</span>
+                    <span>${p.name}</span>
+                </div>
+                <div class="project-item-meta">
+                    ${new Date(p.created_at).toLocaleDateString()}
+                </div>
+                <div class="session-list" id="sessions-${p.id}">
+                    <p class="placeholder" style="font-size:0.75rem; margin:4px 0;">No sessions</p>
+                </div>
+            </div>
+        `).join('');
+
+        // Add click handlers
+        container.querySelectorAll('.project-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                const projectId = item.dataset.projectId;
+                if (e.target.closest('.session-item')) {
+                    // Session click
+                    const sessionId = e.target.closest('.session-item').dataset.sessionId;
+                    selectSession(projectId, sessionId);
+                } else {
+                    // Project click - create new session
+                    selectProject(projectId);
+                }
+            });
+        });
+
+        // Load sessions for each project
+        for (const p of data.projects) {
+            loadSessions(p.id);
+        }
+    } catch (e) {
+        console.error('Failed to load projects:', e);
+    }
+}
+
+async function loadSessions(projectId) {
+    try {
+        const res = await fetch(`/api/projects/${projectId}/children`);
+        const data = await res.json();
+        if (!data.success) return;
+
+        const container = document.getElementById(`sessions-${projectId}`);
+        if (!container) return;
+
+        const sessions = data.children.filter(c => c.node_type === 'session');
+        if (sessions.length === 0) {
+            container.innerHTML = '<p class="placeholder" style="font-size:0.75rem; margin:4px 0;">No sessions</p>';
+            return;
+        }
+
+        container.innerHTML = sessions.map(s => `
+            <div class="session-item ${currentSessionId === s.id ? 'active' : ''}" data-session-id="${s.id}">
+                ${s.name}
+            </div>
+        `).join('');
+    } catch (e) {
+        console.error('Failed to load sessions:', e);
+    }
+}
+
+function selectProject(projectId) {
+    currentProjectId = projectId;
+    currentSessionId = null;
+
+    // Create a new session
+    fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            node_type: 'session',
+            name: `Session ${new Date().toLocaleString()}`,
+            parent_id: projectId,
+        }),
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            selectSession(projectId, data.node.id);
+            loadProjects();
+        }
+    });
+}
+
+function selectSession(projectId, sessionId) {
+    currentProjectId = projectId;
+    currentSessionId = sessionId;
+
+    // Update UI
+    document.querySelectorAll('.project-item').forEach(p => p.classList.toggle('active', p.dataset.projectId === projectId));
+    document.querySelectorAll('.session-item').forEach(s => s.classList.toggle('active', s.dataset.sessionId === sessionId));
+
+    // Enable chat
+    const title = document.getElementById('execution-project-title');
+    const input = document.getElementById('execution-chat-input');
+    const btn = document.getElementById('execution-send-chat');
+    const history = document.getElementById('execution-chat-history');
+
+    if (title) title.textContent = `Project: ${projectId}`;
+    if (input) { input.disabled = false; input.placeholder = 'Ask about this project...'; }
+    if (btn) btn.disabled = false;
+    if (history) history.innerHTML = '<div class="msg system">Session started. Ask anything about this project.</div>';
+}
+
+async function handleExecutionChat() {
+    const input = document.getElementById('execution-chat-input');
+    const message = input.value.trim();
+    if (!message || !currentProjectId) return;
+
+    const history = document.getElementById('execution-chat-history');
+    if (!history) return;
+
+    // Add user message
+    const userMsg = document.createElement('div');
+    userMsg.className = 'msg user';
+    userMsg.textContent = message;
+    history.appendChild(userMsg);
+
+    input.value = '';
+
+    // Add assistant placeholder
+    const assistantMsg = document.createElement('div');
+    assistantMsg.className = 'msg assistant';
+    assistantMsg.textContent = 'Thinking...';
+    history.appendChild(assistantMsg);
+
+    try {
+        const res = await fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                message,
+                project: currentProjectId,
+                stream: false,
+            }),
+        });
+        const data = await res.json();
+        assistantMsg.textContent = data.response || 'No response';
+    } catch (e) {
+        assistantMsg.textContent = 'Error: ' + e.message;
+    }
+}
 
 /* ── Models Configuration ── */
 

@@ -21,6 +21,7 @@
                 <button class="nav-item" data-section="knowledge">Knowledge Studio</button>
                 <button class="nav-item" data-section="builder">Builder</button>
                 <button class="nav-item" data-section="models">Models</button>
+                <button class="nav-item" data-section="execution">Execution</button>
                 <button class="nav-item" data-section="docs">API Notes</button>
             </nav>
             <div class="status-panel">
@@ -195,6 +196,12 @@
                                     <span>Commodity</span>
                                     <input type="text" id="file-commodity" name="commodity" placeholder="e.g. Gold">
                                 </label>
+                                <label class="field">
+                                    <span>Embedding Model</span>
+                                    <select id="file-embedding-model" name="embeddingModel">
+                                        <option value="nomic-embed-text">nomic-embed-text (default)</option>
+                                    </select>
+                                </label>
                             </div>
                             <button type="submit" class="primary-btn">Analyze file</button>
                         </form>
@@ -236,6 +243,12 @@
                                 <label class="field">
                                     <span>Commodity</span>
                                     <input type="text" id="url-commodity" name="commodity" placeholder="e.g. Gold">
+                                </label>
+                                <label class="field">
+                                    <span>Embedding Model</span>
+                                    <select id="url-embedding-model" name="embeddingModel">
+                                        <option value="nomic-embed-text">nomic-embed-text (default)</option>
+                                    </select>
                                 </label>
                             </div>
                             <button type="submit" class="primary-btn">Analyze URL</button>
@@ -365,6 +378,36 @@
                         <p class="section-hint">These run locally via Ollama. Reorder to change fallback priority. Enable/disable as needed.</p>
                         <div id="local-models-list" class="model-list">
                             <p class="placeholder">Loading local models...</p>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section id="execution" class="view hidden">
+                <div class="content-grid two-columns">
+                    <!-- Project Tree Panel -->
+                    <article class="panel-card">
+                        <div class="panel-head">
+                            <h3>Projects</h3>
+                            <button id="create-project-btn" class="primary-btn small">+ New Project</button>
+                        </div>
+                        <div id="projects-list" class="project-tree">
+                            <p class="placeholder">Loading projects...</p>
+                        </div>
+                    </article>
+
+                    <!-- Project Chat Panel -->
+                    <article class="panel-card accent-blue">
+                        <div class="panel-head">
+                            <h3 id="execution-project-title">Select a Project</h3>
+                            <span class="badge blue">RAG</span>
+                        </div>
+                        <div id="execution-chat-history" class="display-area">
+                            <div class="msg system">Select a project to start a project-scoped conversation with RAG context.</div>
+                        </div>
+                        <div class="input-row">
+                            <input type="text" id="execution-chat-input" placeholder="Ask about this project..." disabled>
+                            <button id="execution-send-chat" disabled>Send</button>
                         </div>
                     </article>
                 </div>

@@ -743,3 +743,67 @@ textarea {
     color: #fff;
 }
 
+/* ── Execution Module (Project Tree) ── */
+.project-tree {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.project-item {
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.project-item:hover {
+    background: rgba(255,255,255,0.08);
+}
+.project-item.active {
+    background: rgba(0,100,200,0.2);
+    border-color: rgba(0,150,255,0.4);
+}
+
+.project-item-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+.project-item-header .icon {
+    color: rgba(255,255,255,0.4);
+}
+
+.project-item-meta {
+    font-size: 0.75rem;
+    color: rgba(255,255,255,0.45);
+    margin-top: 4px;
+}
+
+.session-list {
+    margin-top: 8px;
+    padding-left: 16px;
+    border-left: 1px solid rgba(255,255,255,0.1);
+}
+.session-item {
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    color: rgba(255,255,255,0.7);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.session-item:hover {
+    background: rgba(255,255,255,0.06);
+}
+.session-item.active {
+    color: #fff;
+    background: rgba(0,150,255,0.15);
+}
+
+
