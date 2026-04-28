@@ -3,121 +3,399 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>V3 AI | Control Center</title>
+    <title>V3 AI | Knowledge Studio</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="app-container">
+    <div class="app-shell">
         <aside class="sidebar">
-            <div class="logo">
-                <span class="v3">V3</span><span class="comms">COMMS</span>
+            <div class="logo-block">
+                <p class="eyebrow">V3 COMMS AI</p>
+                <h1>Knowledge Studio</h1>
+                <p class="logo-copy">Manage local models, curated knowledge, and review-ready RAG intake from one control surface.</p>
             </div>
-            <nav>
-                <ul>
-                    <li class="active" data-section="overview"><span class="icon">📊</span> Overview</li>
-                    <li data-section="playground"><span class="icon">🚀</span> AI Playground</li>
-                    <li data-section="builder"><span class="icon">🔨</span> <button id='build-test-button'>Build Testing</button><span class='icon'>🛠️</span> Build Testing</li>
-                    <li data-section="docs"><span class="icon">📚</span> API Docs</li>
-                </ul>
+            <nav class="nav-list">
+                <button class="nav-item active" data-section="overview">Overview</button>
+                <button class="nav-item" data-section="playground">Playground</button>
+                <button class="nav-item" data-section="knowledge">Knowledge Studio</button>
+                <button class="nav-item" data-section="builder">Builder</button>
+                <button class="nav-item" data-section="models">Models</button>
+                <button class="nav-item" data-section="docs">API Notes</button>
             </nav>
-            <div class="status-badge">
-                <div class="dot active"></div>
-                System Operational
+            <div class="status-panel">
+                <span class="status-dot"></span>
+                <span>System operational</span>
             </div>
         </aside>
 
-        <main class="content">
-            <header class="top-nav">
-                <h1>Platform Overview</h1>
-                <div class="uptime-counter">Uptime: <span id="uptime-val">00:00:00</span></div>
+        <main class="main-panel">
+            <header class="page-header">
+                <div>
+                    <p class="eyebrow">Control Center</p>
+                    <h2 id="page-title">Overview</h2>
+                </div>
+                <div class="header-pills">
+                    <div class="pill">Uptime <span id="uptime-val">00:00:00</span></div>
+                    <div class="pill">Ollama <span id="ollama-status">Checking...</span></div>
+                </div>
             </header>
 
             <section id="overview" class="view">
-                <div class="stats-grid">
-                    <div class="stat-card glass">
-                        <h3>Active Plugins</h3>
-                        <p id="plugin-count">0</p>
+                <div class="hero-card">
+                    <div>
+                        <p class="eyebrow">RAG workflow</p>
+                        <h3>Upload, review, then push into pgvector</h3>
+                        <p class="hero-copy">Documents and URLs can be classified with AI, checked against your role/category choices, and only ingested after approval.</p>
                     </div>
-                    <div class="stat-card glass">
-                        <h3>Ollama Link</h3>
-                        <p id="ollama-status">Checking...</p>
+                    <div class="hero-metrics">
+                        <div class="metric-card">
+                            <span class="metric-label">Plugins</span>
+                            <strong id="plugin-count">0</strong>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-label">Docs in RAG</span>
+                            <strong id="knowledge-doc-count">0</strong>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-label">Chunks</span>
+                            <strong id="knowledge-chunk-count">0</strong>
+                        </div>
                     </div>
                 </div>
 
-                <h2>Registered Plugins</h2>
-                <div id="plugin-list" class="plugin-grid">
-                    <!-- Plugin cards will be injected here -->
-                </div>
-            </section>
-
-            <section id="builder" class="view hidden">
-                <div class="builder-layout">
-                    <div class="builder-chat glass">
-                        <div class="builder-header">
-                            <h3>🔨 V3 Builder</h3>
-                            <div class="builder-controls">
-                                <span id="builder-model-badge" class="model-badge-builder">...</span>
-                                <button id="builder-reset" class="builder-btn-sm" title="Reset conversation">🔄</button>
-                            </div>
+                <div class="content-grid two-columns">
+                    <article class="panel-card">
+                        <div class="panel-head">
+                            <h3>Registered Plugins</h3>
+                            <span class="badge blue">Live</span>
                         </div>
-                        <div id="builder-history" class="display-area builder-display">
-                            <div class="msg system">Hi! I'm V3 Builder. I can read/write files, run commands, and build features for you. Tell me what to build!</div>
+                        <div id="plugin-list" class="plugin-grid"></div>
+                    </article>
+                    <article class="panel-card accent-red">
+                        <div class="panel-head">
+                            <h3>Knowledge Workflow</h3>
+                            <span class="badge red">Review First</span>
                         </div>
-                        <div class="input-row">
-                            <input type="text" id="builder-input" placeholder="e.g. Add a new API endpoint for...">
-                            <button id="send-builder">Build</button>
-                        </div>
-                    </div>
-                    <div class="builder-sidebar">
-                        <div class="builder-tasks glass">
-                            <h4>📋 Tasks</h4>
-                            <div id="builder-task-list" class="task-list">
-                                <p class="placeholder">No tasks yet</p>
-                            </div>
-                        </div>
-                        <div class="builder-terminal glass">
-                            <h4>💻 Terminal Output</h4>
-                            <div id="builder-terminal" class="terminal-output">
-                                <span class="terminal-dim">Waiting for commands...</span>
-                            </div>
-                        </div>
-                    </div>
+                        <ol class="steps-list">
+                            <li>Upload a file or submit a URL in Knowledge Studio.</li>
+                            <li>Let AI recommend role, category, and tags.</li>
+                            <li>Approve the metadata if it looks right.</li>
+                            <li>Push the reviewed record into pgvector.</li>
+                            <li>Let chat auto-pick the right corpus on new questions.</li>
+                        </ol>
+                    </article>
                 </div>
             </section>
 
             <section id="playground" class="view hidden">
-                <div class="playground-layout">
-                    <div class="tool-selector glass">
-                        <button class="tool-btn active" data-tool="chat">Multilingual Chat</button>
-                        <button class="tool-btn" data-tool="translate">Smart Translator</button>
-                    </div>
-
-                    <div id="chat-tool" class="tool-ui glass">
-                        <div id="chat-history" class="display-area">
-                            <div class="msg system">Welcome to V3 AI. Start a conversation in any language.</div>
+                <div class="content-grid two-columns">
+                    <article class="panel-card span-two">
+                        <div class="panel-head">
+                            <h3>AI Playground</h3>
+                            <div class="inline-controls">
+                                <select id="chat-role-filter">
+                                    <option value="">Auto role</option>
+                                </select>
+                                <select id="chat-category-filter">
+                                    <option value="">Auto category</option>
+                                </select>
+                                <select id="chat-sub-category-filter">
+                                    <option value="">Auto sub-category</option>
+                                </select>
+                                <input type="text" id="chat-company-filter" placeholder="Auto company">
+                                <input type="text" id="chat-project-filter" placeholder="Auto project">
+                                <input type="text" id="chat-commodity-filter" placeholder="Auto commodity">
+                            </div>
                         </div>
-                        <div class="input-row">
-                            <input type="text" id="chat-input" placeholder="Type Namaste or Anything...">
-                            <button id="send-chat">Send</button>
-                        </div>
-                    </div>
-
-                    <div id="translate-tool" class="tool-ui glass hidden">
-                        <div class="translation-controls">
-                            <select id="target-lang">
-                                <option value="Hindi">Hindi</option>
-                                <option value="Gujarati">Gujarati</option>
-                                <option value="Hinglish">Hinglish</option>
-                                <option value="English">English</option>
+                        <div class="tool-switcher">
+                            <button class="tool-btn active" data-tool="chat">Chat</button>
+                            <button class="tool-btn" data-tool="translate">Translate</button>
+                            <select id="chat-model-select" class="model-select-inline">
+                                <option value="auto">Auto (cloud → local)</option>
                             </select>
                         </div>
-                        <textarea id="translate-input" placeholder="Enter text to translate..."></textarea>
-                        <button id="run-translate">Translate</button>
-                        <div id="translation-output" class="display-area">
-                             <p class="placeholder">Result will appear here...</p>
+
+                        <div id="chat-tool" class="tool-panel">
+                            <div id="chat-history" class="display-area">
+                                <div class="msg system">Ask anything. The assistant will infer role and category from your prompt if you do not choose them.</div>
+                            </div>
+                            <div class="input-row">
+                                <input type="text" id="chat-input" placeholder="Ask about architecture, trading, Siebel, support, or anything else">
+                                <button id="send-chat">Send</button>
+                            </div>
                         </div>
-                    </div>
+
+                        <div id="translate-tool" class="tool-panel hidden">
+                            <div class="inline-controls">
+                                <select id="target-lang">
+                                    <option value="Hindi">Hindi</option>
+                                    <option value="Gujarati">Gujarati</option>
+                                    <option value="Hinglish">Hinglish</option>
+                                    <option value="English">English</option>
+                                </select>
+                            </div>
+                            <textarea id="translate-input" placeholder="Enter text to translate..."></textarea>
+                            <button id="run-translate">Translate</button>
+                            <div id="translation-output" class="display-area">
+                                <p class="placeholder">Translation result will appear here.</p>
+                            </div>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section id="knowledge" class="view hidden">
+                <div class="content-grid knowledge-layout">
+                    <article class="panel-card">
+                        <div class="panel-head">
+                            <h3>New Intake</h3>
+                            <span class="badge blue">Draft</span>
+                        </div>
+                        <div class="tool-switcher">
+                            <button class="tool-btn active" data-ingest-mode="file">File Upload</button>
+                            <button class="tool-btn" data-ingest-mode="url">URL Intake</button>
+                        </div>
+
+                        <form id="file-intake-form" class="stack-form">
+                            <label class="field">
+                                <span>Document file</span>
+                                <input type="file" id="knowledge-file" name="file">
+                            </label>
+                            <div class="three-col">
+                                <label class="field">
+                                    <span>Role</span>
+                                    <select id="file-role" name="role"><option value="">AI recommend</option></select>
+                                </label>
+                                <label class="field">
+                                    <span>Category</span>
+                                    <select id="file-category" name="category"><option value="">AI recommend</option></select>
+                                </label>
+                                <label class="field">
+                                    <span>Tags</span>
+                                    <input type="text" id="file-tags" name="tags" placeholder="comma,separated,tags">
+                                </label>
+                            </div>
+                            <div class="three-col">
+                                <label class="field">
+                                    <span>Sub-category</span>
+                                    <select id="file-sub-category" name="subCategory"><option value="">AI recommend</option></select>
+                                </label>
+                                <label class="field">
+                                    <span>Company</span>
+                                    <input type="text" id="file-company" name="company" placeholder="optional company">
+                                </label>
+                                <label class="field">
+                                    <span>Project</span>
+                                    <input type="text" id="file-project" name="project" placeholder="optional project">
+                                </label>
+                            </div>
+                            <div class="three-col">
+                                <label class="field">
+                                    <span>Commodity</span>
+                                    <input type="text" id="file-commodity" name="commodity" placeholder="e.g. Gold">
+                                </label>
+                            </div>
+                            <button type="submit" class="primary-btn">Analyze file</button>
+                        </form>
+
+                        <form id="url-intake-form" class="stack-form hidden">
+                            <label class="field">
+                                <span>Source URL</span>
+                                <input type="url" id="knowledge-url" name="url" placeholder="https://example.com/docs">
+                            </label>
+                            <div class="three-col">
+                                <label class="field">
+                                    <span>Role</span>
+                                    <select id="url-role" name="role"><option value="">AI recommend</option></select>
+                                </label>
+                                <label class="field">
+                                    <span>Category</span>
+                                    <select id="url-category" name="category"><option value="">AI recommend</option></select>
+                                </label>
+                                <label class="field">
+                                    <span>Tags</span>
+                                    <input type="text" id="url-tags" name="tags" placeholder="comma,separated,tags">
+                                </label>
+                            </div>
+                            <div class="three-col">
+                                <label class="field">
+                                    <span>Sub-category</span>
+                                    <select id="url-sub-category" name="subCategory"><option value="">AI recommend</option></select>
+                                </label>
+                                <label class="field">
+                                    <span>Company</span>
+                                    <input type="text" id="url-company" name="company" placeholder="optional company">
+                                </label>
+                                <label class="field">
+                                    <span>Project</span>
+                                    <input type="text" id="url-project" name="project" placeholder="optional project">
+                                </label>
+                            </div>
+                            <div class="three-col">
+                                <label class="field">
+                                    <span>Commodity</span>
+                                    <input type="text" id="url-commodity" name="commodity" placeholder="e.g. Gold">
+                                </label>
+                            </div>
+                            <button type="submit" class="primary-btn">Analyze URL</button>
+                        </form>
+                    </article>
+
+                    <article class="panel-card accent-blue">
+                        <div class="panel-head">
+                            <h3>Review Draft</h3>
+                            <span class="badge blue">AI Assisted</span>
+                        </div>
+                        <div id="draft-review" class="draft-review">
+                            <p class="placeholder">Analyze a file or URL to create a draft record. You will see AI recommendations, mismatch warnings, and actions here.</p>
+                        </div>
+                    </article>
+
+                    <article class="panel-card span-two">
+                        <div class="panel-head">
+                            <h3>Knowledge Intake Ledger</h3>
+                            <div class="inline-controls">
+                                <button id="refresh-records" class="secondary-btn" type="button">Refresh</button>
+                            </div>
+                        </div>
+                        <div class="table-wrap">
+                            <table class="ledger-table">
+                                <thead>
+                                    <tr>
+                                        <th>Title</th>
+                                        <th>Role</th>
+                                        <th>Category</th>
+                                        <th>Scope</th>
+                                        <th>Status</th>
+                                        <th>Created</th>
+                                        <th>Ingested</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="knowledge-records-body">
+                                    <tr><td colspan="8" class="placeholder-cell">No intake records yet.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section id="builder" class="view hidden">
+                <div class="content-grid builder-grid">
+                    <article class="panel-card builder-chat-card">
+                        <div class="panel-head">
+                            <h3>Builder</h3>
+                            <div class="inline-controls">
+                                <span id="builder-model-badge" class="badge blue">...</span>
+                                <button id="builder-reset" class="secondary-btn" type="button">Reset</button>
+                            </div>
+                        </div>
+                        <div id="builder-history" class="display-area builder-display">
+                            <div class="msg system">Describe a change and Builder will work through the task with tool feedback.</div>
+                        </div>
+                        <div class="input-row">
+                            <input type="text" id="builder-input" placeholder="Describe a feature or code change">
+                            <button id="send-builder">Build</button>
+                        </div>
+                    </article>
+
+                    <article class="panel-card">
+                        <div class="panel-head">
+                            <h3>Tasks</h3>
+                        </div>
+                        <div id="builder-task-list" class="task-list">
+                            <p class="placeholder">No tasks yet.</p>
+                        </div>
+                    </article>
+
+                    <article class="panel-card">
+                        <div class="panel-head">
+                            <h3>Terminal Output</h3>
+                        </div>
+                        <div id="builder-terminal" class="terminal-output">
+                            <span class="terminal-dim">Waiting for commands...</span>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section id="models" class="view hidden">
+                <div class="content-grid models-layout">
+                    <!-- Auto Mode Toggle -->
+                    <article class="panel-card span-two">
+                        <div class="panel-head">
+                            <h3>Execution Mode</h3>
+                            <div class="inline-controls">
+                                <label class="switch-label">
+                                    <span>Auto</span>
+                                    <input type="checkbox" id="auto-mode-toggle" checked>
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <p class="hero-copy" style="margin:0">When <strong>Auto</strong> is on, the system tries each enabled model in priority order (cloud first, then local). If a cloud model's API key is exhausted or errors, it automatically falls back to the next. When off, only the topmost enabled model is used.</p>
+                    </article>
+
+                    <!-- Cloud Models Section -->
+                    <article class="panel-card span-two">
+                        <div class="panel-head">
+                            <h3>Cloud Models</h3>
+                            <span class="badge blue">API</span>
+                            <div class="inline-controls">
+                                <button id="add-cloud-model" class="primary-btn small" type="button">+ Add Cloud Model</button>
+                            </div>
+                        </div>
+                        <p class="section-hint">Top priority = first tried. Drag to reorder. Add API key and test before enabling.</p>
+                        <div id="cloud-models-list" class="model-list">
+                            <p class="placeholder">Loading cloud models...</p>
+                        </div>
+                    </article>
+
+                    <!-- Local Models Section -->
+                    <article class="panel-card span-two">
+                        <div class="panel-head">
+                            <h3>Local Models</h3>
+                            <span class="badge green">Ollama</span>
+                            <div class="inline-controls">
+                                <button id="add-local-model" class="primary-btn small" type="button">+ Add Local Model</button>
+                            </div>
+                        </div>
+                        <p class="section-hint">These run locally via Ollama. Reorder to change fallback priority. Enable/disable as needed.</p>
+                        <div id="local-models-list" class="model-list">
+                            <p class="placeholder">Loading local models...</p>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section id="docs" class="view hidden">
+                <div class="content-grid two-columns">
+                    <article class="panel-card">
+                        <div class="panel-head">
+                            <h3>Core Endpoints</h3>
+                        </div>
+                        <ul class="docs-list">
+                            <li><code>POST /api/knowledge/intake/upload</code> create a file draft and AI recommendation</li>
+                            <li><code>POST /api/knowledge/intake/url</code> fetch a URL, classify it, and create a draft</li>
+                            <li><code>POST /api/knowledge/intake/:id/review</code> approve role/category/sub-category/company/project/commodity metadata</li>
+                            <li><code>POST /api/knowledge/intake/:id/ingest</code> push the reviewed record into pgvector</li>
+                            <li><code>POST /chat</code> auto-infers role/category when none is supplied</li>
+                        </ul>
+                    </article>
+                    <article class="panel-card accent-red">
+                        <div class="panel-head">
+                            <h3>What happens on ingest</h3>
+                        </div>
+                        <ul class="docs-list">
+                            <li>The record is stored in the intake ledger first.</li>
+                            <li>AI recommends role, category, sub-category, company, project, commodity, tags, and a short summary.</li>
+                            <li>The approved document is chunked and embedded with <code>nomic-embed-text</code>.</li>
+                            <li>Chunks are written into <code>pgvector</code> with metadata filters.</li>
+                            <li>The record becomes read-only after ingestion.</li>
+                        </ul>
+                    </article>
                 </div>
             </section>
         </main>

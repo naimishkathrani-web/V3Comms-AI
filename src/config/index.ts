@@ -1,5 +1,24 @@
 import dotenv from 'dotenv';
-dotenv.config();
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { existsSync } from 'fs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const projectRoot = join(__dirname, '../..');
+
+// Load .env first (base config)
+const envPath = join(projectRoot, '.env');
+console.log(`[Config] Loading .env from: ${envPath}`);
+console.log(`[Config] .env exists: ${existsSync(envPath)}`);
+dotenv.config({ path: envPath });
+
+// Load .env.local (local overrides with secrets)
+const envLocalPath = join(projectRoot, '.env.local');
+if (existsSync(envLocalPath)) {
+  console.log(`[Config] Loading .env.local from: ${envLocalPath}`);
+  dotenv.config({ path: envLocalPath });
+}
 
 export interface ModelFallbackEntry {
   model: string;
@@ -30,4 +49,19 @@ export const config = {
   },
   maxConcurrentRequests: parseInt(process.env.MAX_CONCURRENT_REQUESTS || '1'),
   env: process.env.NODE_ENV || 'development',
+  builderModel: process.env.BUILDER_MODEL || 'phi3.5:latest',
+  embeddingModel: process.env.EMBEDDING_MODEL || 'nomic-embed-text',
+  pg: {
+    host: process.env.PG_HOST || '127.0.0.1',
+    port: parseInt(process.env.PG_PORT || '15432'),
+    database: process.env.PG_DATABASE || 'V3CommsAI',
+    user: process.env.PG_USER || 'postgres',
+    password: process.env.PG_PASSWORD || '',
+  },
+  ssh: {
+    host: process.env.SSH_HOST || '',
+    port: parseInt(process.env.SSH_PORT || '22'),
+    username: process.env.SSH_USER || '',
+    password: process.env.SSH_PASSWORD || '',
+  },
 };

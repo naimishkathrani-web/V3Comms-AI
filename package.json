@@ -17,12 +17,18 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "helmet": "^8.1.0",
-    "ollama": "^0.6.3"
+    "multer": "^2.1.1",
+    "ollama": "^0.6.3",
+    "pg": "^8.20.0",
+    "ssh2": "^1.17.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/multer": "^2.1.0",
     "@types/node": "^25.6.0",
+    "@types/pg": "^8.20.0",
+    "@types/ssh2": "^1.15.5",
     "ts-node-dev": "^2.0.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3"
