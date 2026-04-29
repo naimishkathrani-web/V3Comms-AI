@@ -85,7 +85,7 @@ class ProjectContextService {
 
     const result = await this.pool.query(
       `SELECT * FROM v3knowledge.projects 
-       WHERE parent_id $1 
+       WHERE parent_id = $1 
        ORDER BY created_at DESC`,
       [parentId || null]
     );

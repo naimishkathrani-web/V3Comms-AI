@@ -135,11 +135,22 @@ app.post('/chat', async (req: Request, res: Response) => {
           tags: parseTags(tags),
         };
 
-        if (!knowledgeFilters.role && !knowledgeFilters.category && !knowledgeFilters.subCategory && !knowledgeFilters.company && !knowledgeFilters.project && !knowledgeFilters.commodity && (!knowledgeFilters.tags || knowledgeFilters.tags.length === 0)) {
+        // Only infer filters if user didn't provide any
+        const hasUserFilters = knowledgeFilters.role || knowledgeFilters.category || knowledgeFilters.subCategory || knowledgeFilters.company || knowledgeFilters.project || knowledgeFilters.commodity || (knowledgeFilters.tags && knowledgeFilters.tags.length > 0);
+        if (!hasUserFilters) {
           knowledgeFilters = await knowledgeIntakeService.inferFiltersFromPrompt(message);
         }
 
-        knowledgeResults = await vectorService.search(message, 3, 0.3, knowledgeFilters || {});
+        knowledgeResults = await vectorService.search(message, 5, 0.2, knowledgeFilters || {});
+        
+        // Fallback: if filtered search returns nothing, try unfiltered search
+        if (knowledgeResults.length === 0) {
+          const unfilteredResults = await vectorService.search(message, 5, 0.2, {});
+          if (unfilteredResults.length > 0) {
+            knowledgeResults = unfilteredResults;
+            knowledgeFilters = null; // Clear filters since we're using unfiltered results
+          }
+        }
         if (knowledgeResults.length > 0) {
           const filterSummary = knowledgeFilters?.role || knowledgeFilters?.category || knowledgeFilters?.subCategory || knowledgeFilters?.company || knowledgeFilters?.project || knowledgeFilters?.commodity
             ? `\nActive filters: ${[
@@ -223,7 +234,8 @@ Guidelines:
 3. Hinglish: If the user speaks in Hinglish, respond in natural, fluent Hinglish.
 4. Support/Marketing: While your current role is a general assistant, keep your responses structured so you can provide helpful information about products or support issues if asked.
 5. Knowledge: You have deep knowledge of Indian culture, festivals, and geography.
-6. Concision: Be helpful but don't be overly wordy unless asked.`;
+6. Concision: Be helpful but don't be overly wordy unless asked.
+7. KNOWLEDGE BASE PRIORITY: When [KNOWLEDGE BASE] context is provided below, you MUST use it as the primary source of truth. Follow the instructions, rules, and mappings in the knowledge base exactly. Do NOT ignore or override knowledge base content with your general knowledge. If the knowledge base says "Red > Blue", respond "Blue" when asked about "Red".`;
   const roleContext = knowledgeFilters?.role || knowledgeFilters?.category || knowledgeFilters?.project || knowledgeFilters?.company || knowledgeFilters?.commodity
     ? `\nRetrieved knowledge is currently focused on role "${knowledgeFilters?.role || 'General'}", category "${knowledgeFilters?.category || 'General'}", sub-category "${knowledgeFilters?.subCategory || 'General'}", company "${knowledgeFilters?.company || 'Shared'}", project "${knowledgeFilters?.project || 'Shared'}", and commodity "${knowledgeFilters?.commodity || 'General'}". Stay aligned with that domain unless the user clearly changes topic.`
     : '';
