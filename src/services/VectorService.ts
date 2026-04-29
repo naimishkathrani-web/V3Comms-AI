@@ -174,23 +174,33 @@ export class VectorService {
       this.sshClient.on('ready', () => {
         // Create local TCP server that forwards through SSH
         this.tunnelServer = net.createServer((socket) => {
-          this.sshClient!.forwardOut(
-            socket.remoteAddress || '127.0.0.1',
-            socket.remotePort || 0,
-            '127.0.0.1',
-            5432,
-            (err, stream) => {
-              if (err) {
-                socket.end();
-                return;
+          // Guard: if SSH client is not connected, reject the connection
+          if (!this.sshClient) {
+            socket.destroy();
+            return;
+          }
+          try {
+            this.sshClient.forwardOut(
+              socket.remoteAddress || '127.0.0.1',
+              socket.remotePort || 0,
+              '127.0.0.1',
+              5432,
+              (err, stream) => {
+                if (err) {
+                  socket.end();
+                  return;
+                }
+                socket.pipe(stream).pipe(socket);
+                socket.on('close', () => stream.end());
+                stream.on('close', () => socket.end());
+                stream.on('error', () => socket.destroy());
+                socket.on('error', () => stream.end());
               }
-              socket.pipe(stream).pipe(socket);
-              socket.on('close', () => stream.end());
-              stream.on('close', () => socket.end());
-              stream.on('error', () => socket.destroy());
-              socket.on('error', () => stream.end());
-            }
-          );
+            );
+          } catch (e) {
+            // SSH client not connected — destroy the socket silently
+            socket.destroy();
+          }
         });
 
         this.tunnelServer!.listen(this.localPort, '127.0.0.1', () => {
@@ -200,7 +210,21 @@ export class VectorService {
         this.tunnelServer!.on('error', (err) => reject(err));
       });
 
-      this.sshClient.on('error', (err) => reject(err));
+      this.sshClient.on('error', (err) => {
+        console.warn(`[VectorService] SSH connection error: ${err.message}`);
+        reject(err);
+      });
+
+      // Handle SSH disconnect — mark as disconnected so PG queries fail gracefully
+      this.sshClient.on('end', () => {
+        console.warn('[VectorService] SSH session ended');
+        this.connected = false;
+      });
+
+      this.sshClient.on('close', () => {
+        console.warn('[VectorService] SSH connection closed');
+        this.connected = false;
+      });
 
       this.sshClient.connect({
         host: config.ssh.host,
@@ -208,6 +232,8 @@ export class VectorService {
         username: config.ssh.username,
         password: config.ssh.password,
         readyTimeout: 15000,
+        keepaliveInterval: 10000,
+        keepaliveCountMax: 3,
       });
     });
   }

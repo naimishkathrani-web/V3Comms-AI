@@ -377,7 +377,6 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('project', document.getElementById('file-project').value);
         formData.append('commodity', document.getElementById('file-commodity').value);
         formData.append('tags', document.getElementById('file-tags').value);
-        formData.append('embeddingModel', document.getElementById('file-embedding-model').value);
 
         try {
             const res = await fetch(`${apiBase}/api/knowledge/intake/upload`, {
@@ -406,7 +405,6 @@ document.addEventListener('DOMContentLoaded', () => {
             project: document.getElementById('url-project').value.trim(),
             commodity: document.getElementById('url-commodity').value.trim(),
             tags: document.getElementById('url-tags').value,
-            embeddingModel: document.getElementById('url-embedding-model').value,
         };
         if (!payload.url) {
             alert('Enter a URL first.');
