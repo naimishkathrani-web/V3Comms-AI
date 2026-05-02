@@ -434,6 +434,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const message = chatInput.value.trim();
         if (!message) return;
 
+        // Disable input and send button while processing
+        chatInput.disabled = true;
+        sendChatBtn.disabled = true;
+        sendChatBtn.textContent = 'Sending...';
+
         appendMessage(chatHistory, 'user', message);
         chatInput.value = '';
         const assistantMessage = appendMessage(chatHistory, 'assistant', '');
@@ -480,6 +485,12 @@ document.addEventListener('DOMContentLoaded', () => {
             chatHistory.scrollTop = chatHistory.scrollHeight;
         } catch (error) {
             assistantMessage.textContent = 'Error connecting to chat.';
+        } finally {
+            // Re-enable input and send button after processing
+            chatInput.disabled = false;
+            sendChatBtn.disabled = false;
+            sendChatBtn.textContent = 'Send';
+            chatInput.focus();
         }
     }
 

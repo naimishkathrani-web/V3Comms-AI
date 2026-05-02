@@ -63,6 +63,10 @@ export class OllamaService {
     return {
       num_ctx: config.ollama.numCtx,
       num_predict: config.ollama.numPredict,
+      num_batch: config.ollama.numBatch,
+      num_thread: config.ollama.numThread || undefined,
+      num_gpu: config.ollama.numGpu,
+      flash_attention: config.ollama.flashAttention || undefined,
       temperature: config.ollama.temperature,
       top_k: config.ollama.topK,
       top_p: config.ollama.topP,

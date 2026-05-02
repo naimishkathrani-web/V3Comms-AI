@@ -482,7 +482,7 @@ export class VectorService {
   }
 
   /**
-   * Search for similar chunks using cosine similarity.
+   * Search for similar chunks using cosine similarity + keyword boost for short queries.
    */
   async search(
     query: string,
@@ -494,6 +494,10 @@ export class VectorService {
 
     const queryEmbedding = await this.embed(query);
     const embeddingStr = `[${queryEmbedding.join(',')}]`;
+
+    // For short queries (single words/numbers), do keyword search as well
+    const isShortQuery = query.trim().split(/\s+/).length <= 2;
+    const keywordPattern = isShortQuery ? `%${query.trim().toLowerCase()}%` : null;
 
     const client = await this.pool!.connect();
 
@@ -555,7 +559,7 @@ export class VectorService {
         params
       );
 
-      return result.rows
+      let results = result.rows
         .map(r => ({
           chunk_text: r.chunk_text,
           similarity: parseFloat(r.similarity),
@@ -565,6 +569,37 @@ export class VectorService {
           metadata: r.metadata || {},
         }))
         .filter(r => r.similarity >= minSimilarity);
+
+      // For short queries, also do a keyword search and merge results
+      if (isShortQuery && keywordPattern && results.length === 0) {
+        const keywordResult = await client.query(
+          `SELECT
+            c.chunk_text,
+            0.5 AS similarity,
+            d.source_type,
+            d.source_path,
+            d.title,
+            c.metadata
+          FROM ${SCHEMA}.chunks c
+          JOIN ${SCHEMA}.documents d ON c.doc_id = d.id
+          WHERE LOWER(c.chunk_text) LIKE $1
+          LIMIT $2`,
+          [keywordPattern, limit]
+        );
+        
+        if (keywordResult.rows.length > 0) {
+          results = keywordResult.rows.map(r => ({
+            chunk_text: r.chunk_text,
+            similarity: parseFloat(r.similarity),
+            source_type: r.source_type,
+            source_path: r.source_path,
+            title: r.title,
+            metadata: r.metadata || {},
+          }));
+        }
+      }
+
+      return results;
     } finally {
       client.release();
     }

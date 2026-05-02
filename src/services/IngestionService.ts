@@ -146,9 +146,9 @@ export class IngestionService {
 
   /**
    * Split text into overlapping chunks for embedding.
-   * Uses ~500 character chunks with 100 character overlap.
+   * Uses ~200 character chunks with 50 character overlap for better granularity.
    */
-  private chunkText(text: string, chunkSize: number = 500, overlap: number = 100): string[] {
+  private chunkText(text: string, chunkSize: number = 200, overlap: number = 50): string[] {
     // Normalize whitespace
     const normalized = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 

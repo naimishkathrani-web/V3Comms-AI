@@ -34,6 +34,10 @@ export const config = {
     // Performance tuning - smaller values = faster inference on CPU
     numCtx: parseInt(process.env.OLLAMA_NUM_CTX || '2048'),
     numPredict: parseInt(process.env.OLLAMA_NUM_PREDICT || '256'),
+    numBatch: parseInt(process.env.OLLAMA_NUM_BATCH || '512'),
+    numThread: parseInt(process.env.OLLAMA_NUM_THREAD || '0'), // 0 = auto-detect
+    numGpu: parseInt(process.env.OLLAMA_NUM_GPU || '0'), // 0 = CPU only
+    flashAttention: process.env.OLLAMA_FLASH_ATTENTION === 'true',
     temperature: parseFloat(process.env.OLLAMA_TEMPERATURE || '0.7'),
     topK: parseInt(process.env.OLLAMA_TOP_K || '40'),
     topP: parseFloat(process.env.OLLAMA_TOP_P || '0.9'),

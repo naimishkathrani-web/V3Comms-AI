@@ -141,11 +141,13 @@ app.post('/chat', async (req: Request, res: Response) => {
           knowledgeFilters = await knowledgeIntakeService.inferFiltersFromPrompt(message);
         }
 
-        knowledgeResults = await vectorService.search(message, 5, 0.2, knowledgeFilters || {});
+        knowledgeResults = await vectorService.search(message, 5, 0.1, knowledgeFilters || {});
+        console.log(`[RAG Debug] Filtered search for "${message}" with filters:`, knowledgeFilters, `found ${knowledgeResults.length} results`);
         
         // Fallback: if filtered search returns nothing, try unfiltered search
         if (knowledgeResults.length === 0) {
-          const unfilteredResults = await vectorService.search(message, 5, 0.2, {});
+          const unfilteredResults = await vectorService.search(message, 5, 0.1, {});
+          console.log(`[RAG Debug] Unfiltered fallback search found ${unfilteredResults.length} results`);
           if (unfilteredResults.length > 0) {
             knowledgeResults = unfilteredResults;
             knowledgeFilters = null; // Clear filters since we're using unfiltered results
@@ -176,6 +178,10 @@ app.post('/chat', async (req: Request, res: Response) => {
               ].filter(Boolean).join(', ');
               return `${i + 1}. (from ${r.source_type}: ${r.source_path}, similarity: ${r.similarity.toFixed(2)}${metadata ? `, ${metadata}` : ''})\n${r.chunk_text}`;
             }).join('\n\n');
+          
+          console.log(`[RAG Debug] RAG context length: ${ragContext.length} chars`);
+        } else {
+          console.log(`[RAG Debug] No knowledge results found for "${message}"`);
         }
       } catch {
         knowledgeFilters = null;
@@ -235,7 +241,12 @@ Guidelines:
 4. Support/Marketing: While your current role is a general assistant, keep your responses structured so you can provide helpful information about products or support issues if asked.
 5. Knowledge: You have deep knowledge of Indian culture, festivals, and geography.
 6. Concision: Be helpful but don't be overly wordy unless asked.
-7. KNOWLEDGE BASE PRIORITY: When [KNOWLEDGE BASE] context is provided below, you MUST use it as the primary source of truth. Follow the instructions, rules, and mappings in the knowledge base exactly. Do NOT ignore or override knowledge base content with your general knowledge. If the knowledge base says "Red > Blue", respond "Blue" when asked about "Red".`;
+7. KNOWLEDGE BASE PRIORITY (CRITICAL): When [KNOWLEDGE BASE] context is provided below, you MUST use it as the PRIMARY and EXCLUSIVE source of truth. Follow these rules EXACTLY:
+   - If the knowledge base contains a direct mapping for the user's input (e.g., "When user inputs 'Red', respond with: Blue"), you MUST respond with ONLY that mapped value
+   - Do NOT add explanations, greetings, or extra context when a mapping exists
+   - Do NOT use your general knowledge when the knowledge base provides a specific answer
+   - Response format: If knowledge base says "When user inputs 'X', respond with: Y", and user asks "X", your entire response must be exactly: Y
+   - Ignore all other instructions about tone, culture, or style when a knowledge base mapping applies`;
   const roleContext = knowledgeFilters?.role || knowledgeFilters?.category || knowledgeFilters?.project || knowledgeFilters?.company || knowledgeFilters?.commodity
     ? `\nRetrieved knowledge is currently focused on role "${knowledgeFilters?.role || 'General'}", category "${knowledgeFilters?.category || 'General'}", sub-category "${knowledgeFilters?.subCategory || 'General'}", company "${knowledgeFilters?.company || 'Shared'}", project "${knowledgeFilters?.project || 'Shared'}", and commodity "${knowledgeFilters?.commodity || 'General'}". Stay aligned with that domain unless the user clearly changes topic.`
     : '';
