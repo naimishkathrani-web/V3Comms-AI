@@ -81,16 +81,23 @@ class ProjectContextService {
   }
 
   async getChildren(parentId: string | null): Promise<ProjectNode[]> {
-    if (!this.pool) throw new Error('Pool not initialized');
+    if (!this.pool) {
+      console.warn('[ProjectContextService] Pool not initialized, returning empty children list');
+      return [];
+    }
 
-    const result = await this.pool.query(
-      `SELECT * FROM v3knowledge.projects 
-       WHERE parent_id = $1 
-       ORDER BY created_at DESC`,
-      [parentId || null]
-    );
-
-    return result.rows;
+    try {
+      const result = await this.pool.query(
+        `SELECT * FROM v3knowledge.projects 
+         WHERE parent_id = $1 
+         ORDER BY created_at DESC`,
+        [parentId || null]
+      );
+      return result.rows;
+    } catch (error: any) {
+      console.error('[ProjectContextService] getChildren error:', error.message);
+      return [];
+    }
   }
 
   async getTree(rootId: string): Promise<ProjectNode[]> {
@@ -179,15 +186,22 @@ class ProjectContextService {
   }
 
   async listProjects(): Promise<ProjectNode[]> {
-    if (!this.pool) throw new Error('Pool not initialized');
+    if (!this.pool) {
+      console.warn('[ProjectContextService] Pool not initialized, returning empty projects list');
+      return [];
+    }
 
-    const result = await this.pool.query(
-      `SELECT * FROM v3knowledge.projects 
-       WHERE node_type = 'project' 
-       ORDER BY updated_at DESC`
-    );
-
-    return result.rows;
+    try {
+      const result = await this.pool.query(
+        `SELECT * FROM v3knowledge.projects 
+         WHERE node_type = 'project' 
+         ORDER BY updated_at DESC`
+      );
+      return result.rows;
+    } catch (error: any) {
+      console.error('[ProjectContextService] listProjects error:', error.message);
+      return [];
+    }
   }
 }
 
