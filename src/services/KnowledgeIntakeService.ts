@@ -18,6 +18,9 @@ export interface KnowledgeClassification {
   summary: string;
   confidence: number;
   reasoning: string;
+  conceptName: string | null;
+  definition: string | null;
+  reasoningTrap: string | null;
 }
 
 export interface IntakeDraftInput {
@@ -114,8 +117,16 @@ Return valid JSON only with this exact shape:
   "tags": string[],
   "summary": string,
   "confidence": number,
-  "reasoning": string
+  "reasoning": string,
+  "conceptName": string|null,
+  "definition": string|null,
+  "reasoningTrap": string|null
 }
+
+Rules for 'Psychologist' Mindset extraction:
+- "conceptName": The core psychological or technical principle discussed (e.g., "Cognitive Dissonance").
+- "definition": A concise first-principles definition of the concept.
+- "reasoningTrap": Common logical fallacies or cognitive biases related to this concept that a researcher should avoid.
 
 Rules:
 - "role" should be the most relevant audience or persona for this content, such as "Stock Trader", "Enterprise Architect", "Siebel Developer", or "General Knowledge".
@@ -159,6 +170,9 @@ ${sample}`;
         summary: this.cleanValue(parsed.summary) || 'Document prepared for knowledge ingestion.',
         confidence: this.normalizeConfidence(parsed.confidence),
         reasoning: this.cleanValue(parsed.reasoning) || 'Classification inferred from the document content.',
+        conceptName: this.cleanValue(parsed.conceptName),
+        definition: this.cleanValue(parsed.definition),
+        reasoningTrap: this.cleanValue(parsed.reasoningTrap),
       };
     } catch {
       return {
@@ -172,6 +186,9 @@ ${sample}`;
         summary: 'Document prepared for knowledge ingestion.',
         confidence: 0.2,
         reasoning: 'Automatic classification fallback was used.',
+        conceptName: null,
+        definition: null,
+        reasoningTrap: null,
       };
     }
   }
@@ -241,6 +258,9 @@ ${sample}`;
       suggestedProject: classification.project,
       suggestedCommodity: classification.commodity,
       suggestedTags: classification.tags,
+      suggestedConceptName: classification.conceptName,
+      suggestedDefinition: classification.definition,
+      suggestedReasoningTrap: classification.reasoningTrap,
       classificationConfidence: classification.confidence,
       classificationReasoning: classification.reasoning,
       contentHash: this.hashContent(input.content),

@@ -69,6 +69,12 @@ export interface KnowledgeIntakeRecord {
   content_preview: string;
   source_metadata: Record<string, any>;
   ingestion_result: Record<string, any>;
+  concept_name: string | null;
+  definition: string | null;
+  reasoning_trap: string | null;
+  suggested_concept_name: string | null;
+  suggested_definition: string | null;
+  suggested_reasoning_trap: string | null;
   read_only: boolean;
   created_at: Date;
   updated_at: Date;
@@ -308,7 +314,13 @@ export class VectorService {
           read_only BOOLEAN DEFAULT FALSE,
           created_at TIMESTAMPTZ DEFAULT now(),
           updated_at TIMESTAMPTZ DEFAULT now(),
-          ingested_at TIMESTAMPTZ
+          ingested_at TIMESTAMPTZ,
+          concept_name TEXT,
+          definition TEXT,
+          reasoning_trap TEXT,
+          suggested_concept_name TEXT,
+          suggested_definition TEXT,
+          suggested_reasoning_trap TEXT
         )
       `);
 
@@ -347,6 +359,30 @@ export class VectorService {
       await client.query(`
         ALTER TABLE ${SCHEMA}.knowledge_intake_records
         ADD COLUMN IF NOT EXISTS suggested_project TEXT
+      `);
+      await client.query(`
+        ALTER TABLE ${SCHEMA}.knowledge_intake_records
+        ADD COLUMN IF NOT EXISTS concept_name TEXT
+      `);
+      await client.query(`
+        ALTER TABLE ${SCHEMA}.knowledge_intake_records
+        ADD COLUMN IF NOT EXISTS definition TEXT
+      `);
+      await client.query(`
+        ALTER TABLE ${SCHEMA}.knowledge_intake_records
+        ADD COLUMN IF NOT EXISTS reasoning_trap TEXT
+      `);
+      await client.query(`
+        ALTER TABLE ${SCHEMA}.knowledge_intake_records
+        ADD COLUMN IF NOT EXISTS suggested_concept_name TEXT
+      `);
+      await client.query(`
+        ALTER TABLE ${SCHEMA}.knowledge_intake_records
+        ADD COLUMN IF NOT EXISTS suggested_definition TEXT
+      `);
+      await client.query(`
+        ALTER TABLE ${SCHEMA}.knowledge_intake_records
+        ADD COLUMN IF NOT EXISTS suggested_reasoning_trap TEXT
       `);
       await client.query(`
         ALTER TABLE ${SCHEMA}.knowledge_intake_records
@@ -695,16 +731,24 @@ export class VectorService {
     contentHash?: string | null;
     contentPreview?: string;
     sourceMetadata?: Record<string, any>;
+    conceptName?: string | null;
+    definition?: string | null;
+    reasoningTrap?: string | null;
+    suggestedConceptName?: string | null;
+    suggestedDefinition?: string | null;
+    suggestedReasoningTrap?: string | null;
   }): Promise<KnowledgeIntakeRecord> {
     this.ensureConnected();
     const result = await this.pool!.query(
       `INSERT INTO ${SCHEMA}.knowledge_intake_records (
          source_type, source_path, source_url, title, status, role, category, sub_category, company, project, commodity, tags,
          suggested_role, suggested_category, suggested_sub_category, suggested_company, suggested_project, suggested_commodity, suggested_tags, classification_confidence,
-         classification_reasoning, content_hash, content_preview, source_metadata
+         classification_reasoning, content_hash, content_preview, source_metadata,
+         concept_name, definition, reasoning_trap, suggested_concept_name, suggested_definition, suggested_reasoning_trap
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb,
-         $13, $14, $15, $16, $17, $18, $19::jsonb, $20, $21, $22, $23, $24::jsonb
+         $13, $14, $15, $16, $17, $18, $19::jsonb, $20, $21, $22, $23, $24::jsonb,
+         $25, $26, $27, $28, $29, $30
        )
        RETURNING *`,
       [
@@ -732,6 +776,12 @@ export class VectorService {
         input.contentHash || null,
         input.contentPreview || '',
         JSON.stringify(input.sourceMetadata || {}),
+        input.conceptName || null,
+        input.definition || null,
+        input.reasoningTrap || null,
+        input.suggestedConceptName || null,
+        input.suggestedDefinition || null,
+        input.suggestedReasoningTrap || null
       ]
     );
     return this.normalizeKnowledgeIntakeRecord(result.rows[0]);
@@ -964,6 +1014,12 @@ export class VectorService {
       source_metadata: row.source_metadata || {},
       ingestion_result: row.ingestion_result || {},
       content_preview: row.content_preview || '',
+      concept_name: row.concept_name || null,
+      definition: row.definition || null,
+      reasoning_trap: row.reasoning_trap || null,
+      suggested_concept_name: row.suggested_concept_name || null,
+      suggested_definition: row.suggested_definition || null,
+      suggested_reasoning_trap: row.suggested_reasoning_trap || null,
       read_only: Boolean(row.read_only),
     };
   }
