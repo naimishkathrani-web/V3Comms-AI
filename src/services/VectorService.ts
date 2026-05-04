@@ -48,7 +48,7 @@ export interface KnowledgeIntakeRecord {
   source_path: string;
   source_url: string | null;
   title: string;
-  status: 'review_required' | 'ready_to_ingest' | 'ingested' | 'error';
+  status: 'review_required' | 'ready_to_ingest' | 'ingested' | 'error' | 'in_progress' | 'pending';
   role: string | null;
   category: string | null;
   sub_category: string | null;
@@ -791,7 +791,7 @@ export class VectorService {
     return this.normalizeKnowledgeIntakeRecord(result.rows[0]);
   }
 
-  async setKnowledgeIntakeRecordStatus(
+  async updateKnowledgeIntakeRecord(
     id: number,
     status: KnowledgeIntakeRecord['status'],
     updates: Partial<Pick<KnowledgeIntakeRecord, 'role' | 'category' | 'sub_category' | 'company' | 'project' | 'commodity' | 'tags'>> = {}
@@ -821,6 +821,52 @@ export class VectorService {
         updates.commodity || null,
         JSON.stringify(updates.tags || []),
       ]
+    );
+    if (!result.rows[0]) throw new Error('Knowledge intake record not found');
+    return this.normalizeKnowledgeIntakeRecord(result.rows[0]);
+  }
+
+  async resetKnowledgeIntakeRecord(id: number): Promise<KnowledgeIntakeRecord> {
+    this.ensureConnected();
+    // Step 1: Delete any existing documents associated with this intake record
+    await this.pool!.query(
+      `DELETE FROM ${SCHEMA}.documents WHERE intake_record_id = $1`,
+      [id]
+    );
+
+    // Step 2: Reset the intake record status
+    const result = await this.pool!.query(
+      `UPDATE ${SCHEMA}.knowledge_intake_records
+       SET status = 'review_required',
+           read_only = FALSE,
+           ingested_at = NULL,
+           ingestion_result = '{}'::jsonb,
+           updated_at = now()
+       WHERE id = $1
+       RETURNING *`,
+      [id]
+    );
+    if (!result.rows[0]) throw new Error('Knowledge intake record not found');
+    return this.normalizeKnowledgeIntakeRecord(result.rows[0]);
+  }
+
+  async updateKnowledgeIntakeStatus(
+    id: number,
+    status: KnowledgeIntakeRecord['status'],
+    error?: string
+  ): Promise<KnowledgeIntakeRecord> {
+    this.ensureConnected();
+    const result = await this.pool!.query(
+      `UPDATE ${SCHEMA}.knowledge_intake_records
+       SET status = $2,
+           ingestion_result = CASE 
+             WHEN $3::text IS NOT NULL THEN jsonb_set(COALESCE(ingestion_result, '{}'::jsonb), '{error}', to_jsonb($3::text))
+             ELSE ingestion_result 
+           END,
+           updated_at = now()
+       WHERE id = $1
+       RETURNING *`,
+      [id, status, error || null]
     );
     if (!result.rows[0]) throw new Error('Knowledge intake record not found');
     return this.normalizeKnowledgeIntakeRecord(result.rows[0]);

@@ -522,6 +522,16 @@ textarea {
     background: var(--light-blue);
 }
 
+.status-chip.in_progress {
+    background: #fff4e5;
+    color: #b35900;
+}
+
+.status-chip.error {
+    background: #ffecec;
+    color: #e53935;
+}
+
 .tool-execution,
 .tool-result-block {
     margin-top: 8px;

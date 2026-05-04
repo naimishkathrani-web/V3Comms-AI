@@ -265,42 +265,47 @@ ${sample}`;
     commodity?: string;
     tags?: string[];
   }): Promise<IntakeDraftResult> {
-    const response = await fetch(input.url, {
-      headers: { 'User-Agent': 'V3Comms-AI/1.0' },
-      signal: AbortSignal.timeout(30000),
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch URL: HTTP ${response.status}`);
-    }
+    try {
+      const response = await fetch(input.url, {
+        headers: { 'User-Agent': 'V3Comms-AI/1.0' },
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch URL: HTTP ${response.status}`);
+      }
 
-    const html = await response.text();
-    const content = this.extractTextFromHtml(html);
-    if (!content.trim()) {
-      throw new Error('No readable text content found at the provided URL');
-    }
+      const html = await response.text();
+      const content = this.extractTextFromHtml(html);
+      if (!content.trim()) {
+        throw new Error('No readable text content found at the provided URL');
+      }
 
-    const title = this.extractTitleFromHtml(html) || input.url;
-    return this.createDraft({
-      sourceType: 'url',
-      title,
-      content,
-      sourceUrl: input.url,
-      sourcePath: input.url,
-      role: input.role,
-      category: input.category,
-      subCategory: input.subCategory,
-      company: input.company,
-      project: input.project,
-      commodity: input.commodity,
-      tags: input.tags,
-    });
+      const title = this.extractTitleFromHtml(html) || input.url;
+      return this.createDraft({
+        sourceType: 'url',
+        title,
+        content,
+        sourceUrl: input.url,
+        sourcePath: input.url,
+        role: input.role,
+        category: input.category,
+        subCategory: input.subCategory,
+        company: input.company,
+        project: input.project,
+        commodity: input.commodity,
+        tags: input.tags,
+      });
+    } catch (error: any) {
+      console.error(`[KnowledgeIntakeService] URL intake failed: ${error.message}`);
+      throw error;
+    }
   }
 
   async reviewRecord(id: number, updates: { role?: string; category?: string; subCategory?: string; company?: string; project?: string; commodity?: string; tags?: string[] }) {
     const record = await vectorService.getKnowledgeIntakeRecord(id);
     if (!record) throw new Error('Knowledge intake record not found');
     if (record.read_only) throw new Error('This knowledge record is read-only after ingestion');
-    return vectorService.setKnowledgeIntakeRecordStatus(id, 'ready_to_ingest', {
+    return vectorService.updateKnowledgeIntakeRecord(id, 'ready_to_ingest', {
       role: updates.role,
       category: updates.category,
       sub_category: updates.subCategory,
@@ -316,57 +321,67 @@ ${sample}`;
     if (!record) throw new Error('Knowledge intake record not found');
     if (record.read_only) throw new Error('This knowledge record is read-only after ingestion');
 
-    const content = record.content_preview || this.fetchContentForRecord(record);
-    if (!content.trim()) throw new Error('No content available to ingest');
+    // Mark as in-progress immediately
+    await vectorService.updateKnowledgeIntakeStatus(id, 'in_progress');
 
-    const role = this.cleanValue(override?.role) || record.role || record.suggested_role || 'General Knowledge';
-    const category = this.cleanValue(override?.category) || record.category || record.suggested_category || 'General';
-    const subCategory = this.cleanValue(override?.subCategory) || record.sub_category || record.suggested_sub_category || 'General';
-    const company = this.cleanValue(override?.company) || record.company || record.suggested_company;
-    const project = this.cleanValue(override?.project) || record.project || record.suggested_project;
-    const commodity = this.cleanValue(override?.commodity) || record.commodity || record.suggested_commodity;
-    const tags = this.normalizeTags(override?.tags?.length ? override.tags : record.tags || record.suggested_tags || []);
+    try {
+      const content = record.content_preview || this.fetchContentForRecord(record);
+      if (!content.trim()) throw new Error('No content available to ingest');
 
-    const chunks = this.chunkText(content);
-    if (chunks.length === 0) throw new Error('No text content to embed');
+      const role = this.cleanValue(override?.role) || record.role || record.suggested_role || 'General Knowledge';
+      const category = this.cleanValue(override?.category) || record.category || record.suggested_category || 'General';
+      const subCategory = this.cleanValue(override?.subCategory) || record.sub_category || record.suggested_sub_category || 'General';
+      const company = this.cleanValue(override?.company) || record.company || record.suggested_company;
+      const project = this.cleanValue(override?.project) || record.project || record.suggested_project;
+      const commodity = this.cleanValue(override?.commodity) || record.commodity || record.suggested_commodity;
+      const tags = this.normalizeTags(override?.tags?.length ? override.tags : record.tags || record.suggested_tags || []);
 
-    const metadata = {
-      role,
-      category,
-      sub_category: subCategory,
-      company,
-      project,
-      commodity,
-      tags,
-      intakeRecordId: record.id,
-      title: record.title,
-      sourceType: record.source_type,
-      sourceUrl: record.source_url,
-    };
+      const chunks = this.chunkText(content);
+      if (chunks.length === 0) throw new Error('No text content to embed');
 
-    await vectorService.addDocument(
-      record.source_type,
-      record.source_path,
-      record.title,
-      chunks,
-      record.content_hash || undefined,
-      metadata,
-      record.id,
-    );
+      const metadata = {
+        role,
+        category,
+        sub_category: subCategory,
+        company,
+        project,
+        commodity,
+        tags,
+        intakeRecordId: record.id,
+        title: record.title,
+        sourceType: record.source_type,
+        sourceUrl: record.source_url,
+      };
 
-    const updated = await vectorService.markKnowledgeIntakeRecordIngested(record.id, {
-      role,
-      category,
-      subCategory,
-      company,
-      project,
-      commodity,
-      tags,
-      chunkCount: chunks.length,
-      embeddingModel: config.embeddingModel,
-    });
+      await vectorService.addDocument(
+        record.source_type,
+        record.source_path,
+        record.title,
+        chunks,
+        record.content_hash || undefined,
+        metadata,
+        record.id,
+      );
 
-    return updated;
+      const updated = await vectorService.markKnowledgeIntakeRecordIngested(record.id, {
+        role,
+        category,
+        subCategory,
+        company,
+        project,
+        commodity,
+        tags,
+        chunkCount: chunks.length,
+        embeddingModel: config.embeddingModel,
+      });
+
+      return updated;
+    } catch (error: any) {
+      console.error(`[KnowledgeIntakeService] Ingestion failed for record ${id}: ${error.message}`);
+      // Mark record with error status and save reason
+      await vectorService.updateKnowledgeIntakeStatus(id, 'error', error.message);
+      throw error;
+    }
   }
 
   private fetchContentForRecord(record: KnowledgeIntakeRecord): string {
@@ -453,36 +468,76 @@ ${sample}`;
     return createHash('sha256').update(content).digest('hex').slice(0, 16);
   }
 
-  private chunkText(text: string, chunkSize: number = 500, overlap: number = 100): string[] {
-    const normalized = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
-    if (!normalized) return [];
-    if (normalized.length <= chunkSize) return [normalized];
+  private chunkText(text: string, chunkSize: number = 800, overlap: number = 150): string[] {
+    const separators = ['\n\n\n', '\n\n', '\n', '. ', '! ', '? ', ' ', ''];
+    return this.recursiveSplit(text.trim(), chunkSize, overlap, separators, '');
+  }
 
-    const chunks: string[] = [];
-    let start = 0;
-    while (start < normalized.length) {
-      let end = Math.min(normalized.length, start + chunkSize);
-      if (end < normalized.length) {
-        const searchRange = normalized.slice(Math.max(start, end - 60), Math.min(normalized.length, end + 60));
-        const breakPoints = [
-          searchRange.lastIndexOf('\n\n'),
-          searchRange.lastIndexOf('. '),
-          searchRange.lastIndexOf('! '),
-          searchRange.lastIndexOf('? '),
-          searchRange.lastIndexOf('\n'),
-        ].filter(i => i >= 0);
+  private recursiveSplit(text: string, chunkSize: number, overlap: number, separators: string[], currentHeader: string): string[] {
+    const finalChunks: string[] = [];
+    
+    // Check if this block starts with a header
+    const headerMatch = text.match(/^(#+)\s+(.+)$|^\n+(#+)\s+(.+)$|/m);
+    let activeHeader = currentHeader;
+    
+    if (text.length <= chunkSize) {
+      return [activeHeader ? `[Section: ${activeHeader}]\n${text}` : text];
+    }
 
-        if (breakPoints.length > 0) {
-          end = Math.max(start + 50, end - 60 + Math.max(...breakPoints) + 1);
-        }
+    // Find the best separator to use
+    let separator = separators[separators.length - 1];
+    let newSeparators: string[] = [];
+
+    for (let i = 0; i < separators.length; i++) {
+      if (text.includes(separators[i])) {
+        separator = separators[i];
+        newSeparators = separators.slice(i + 1);
+        break;
+      }
+    }
+
+    const splits = text.split(separator);
+    let currentChunk = '';
+
+    for (const split of splits) {
+      // Check if the split itself contains a header
+      const innerHeaderMatch = split.match(/^#+\s+(.+)$/m);
+      if (innerHeaderMatch) {
+        activeHeader = innerHeaderMatch[1].trim();
       }
 
-      const chunk = normalized.slice(start, end).trim();
-      if (chunk.length > 20) chunks.push(chunk);
-      if (end >= normalized.length) break;
-      start = Math.max(end - overlap, start + 1);
+      const chunkPrefix = (activeHeader && !currentChunk.includes(`[Section: ${activeHeader}]`)) 
+        ? `[Section: ${activeHeader}]\n` 
+        : '';
+        
+      if (currentChunk.length + split.length + separator.length + chunkPrefix.length <= chunkSize) {
+        currentChunk += (currentChunk ? separator : '') + split;
+      } else {
+        if (currentChunk) {
+          finalChunks.push(currentChunk.trim());
+        }
+
+        if (split.length > chunkSize) {
+          const subChunks = this.recursiveSplit(split, chunkSize, overlap, newSeparators, activeHeader);
+          finalChunks.push(...subChunks.slice(0, -1));
+          currentChunk = subChunks[subChunks.length - 1];
+        } else {
+          currentChunk = split;
+        }
+      }
     }
-    return chunks;
+
+    if (currentChunk) {
+      finalChunks.push(currentChunk.trim());
+    }
+
+    return finalChunks.filter(c => c.length > 10).map(c => {
+        // Ensure every chunk has the context if it was in a headered section
+        if (activeHeader && !c.includes(`[Section: ${activeHeader}]`)) {
+            return `[Section: ${activeHeader}]\n${c}`;
+        }
+        return c;
+    });
   }
 
   private extractTextFromHtml(html: string): string {
@@ -490,11 +545,18 @@ ${sample}`;
     text = text.replace(/<style[\s\S]*?<\/style>/gi, '');
     text = text.replace(/<nav[\s\S]*?<\/nav>/gi, '');
     text = text.replace(/<footer[\s\S]*?<\/footer>/gi, '');
-    text = text.replace(/<\/?(p|div|h[1-6]|li|tr|br|hr|section|article)[^>]*>/gi, '\n');
+
+    // Tag headers before stripping
+    text = text.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, '\n\n\n# $1\n\n');
+    text = text.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, '\n\n## $1\n\n');
+    text = text.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, '\n\n### $1\n\n');
+    
+    text = text.replace(/<\/?(p|div|li|tr|br|hr|section|article)[^>]*>/gi, '\n');
     text = text.replace(/<[^>]+>/g, ' ');
     text = text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
     text = text.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ');
-    return text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    
+    return text.replace(/[ \t]+/g, ' ').replace(/\n{4,}/g, '\n\n\n').replace(/\n{3}/g, '\n\n\n').trim();
   }
 
   private extractTitleFromHtml(html: string): string | null {

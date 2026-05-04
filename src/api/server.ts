@@ -519,6 +519,15 @@ app.post('/api/knowledge/intake/:id/ingest', async (req: Request, res: Response)
   }
 });
 
+app.post('/api/knowledge/intake/:id/reset', async (req: Request, res: Response) => {
+  try {
+    const record = await vectorService.resetKnowledgeIntakeRecord(Number(req.params.id));
+    res.json({ success: true, record });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Search the knowledge base
 app.post('/api/knowledge/search', async (req: Request, res: Response) => {
   const { query, limit, minSimilarity, role, category, subCategory, company, project, commodity, tags } = req.body;

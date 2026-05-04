@@ -354,6 +354,33 @@ export class OllamaService {
       timeoutMs: e.timeoutMs,
     }));
   }
+
+  /**
+   * Generate embeddings for a single text.
+   */
+  public async embed(text: string, model?: string): Promise<number[]> {
+    await this.acquireSlot();
+    try {
+      const response = await this.client.embeddings({
+        model: model || config.embeddingModel,
+        prompt: text,
+        keep_alive: config.ollama.keepAlive,
+      });
+      return response.embedding;
+    } finally {
+      this.releaseSlot();
+    }
+  }
+
+  /**
+   * Generate embeddings for multiple texts in parallel.
+   */
+  public async embedBatch(texts: string[], model?: string): Promise<number[][]> {
+    // Note: Ollama's JS client doesn't have a native batch embedding method yet
+    // that takes an array of strings in one call, so we map them.
+    // However, we respect our concurrency limits.
+    return Promise.all(texts.map(text => this.embed(text, model)));
+  }
 }
 
 export const ollamaService = new OllamaService();

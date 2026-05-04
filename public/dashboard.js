@@ -195,16 +195,26 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
 
             const actionsCell = row.querySelector('.actions-cell');
+            const isBusy = record.status === 'in_progress';
+
             const reviewButton = makeActionButton('Review', () => {
                 state.currentDraft = { record, classification: null, warnings: record.source_metadata?.warnings || [] };
                 renderDraft();
                 showSection('knowledge');
             });
+            if (isBusy) reviewButton.disabled = true;
             actionsCell.appendChild(reviewButton);
 
             if (!record.read_only) {
                 const approveButton = makeActionButton('Approve', () => approveRecord(record.id, record));
                 const ingestButton = makeActionButton('Push to RAG', () => ingestRecord(record.id, record));
+                
+                if (isBusy) {
+                    approveButton.disabled = true;
+                    ingestButton.disabled = true;
+                    ingestButton.textContent = 'Ingesting...';
+                }
+
                 actionsCell.appendChild(approveButton);
                 actionsCell.appendChild(ingestButton);
             } else {
@@ -212,6 +222,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 locked.className = 'badge blue';
                 locked.textContent = 'Read only';
                 actionsCell.appendChild(locked);
+
+                // Show Reset for ingested records
+                const resetButton = makeActionButton('Reset', () => resetRecord(record.id));
+                actionsCell.appendChild(resetButton);
+            }
+
+            // Show Reset for errored records
+            if (record.status === 'error') {
+                const resetButton = makeActionButton('Reset/Retry', () => resetRecord(record.id));
+                actionsCell.appendChild(resetButton);
             }
 
             recordsBody.appendChild(row);
@@ -290,6 +310,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 ` : ''}
 
+                ${record.status === 'error' && record.ingestion_result?.error ? `
+                    <div class="warning-card" style="background: #ffecec; border-color: #e53935;">
+                        <strong style="color: #e53935;">Ingestion Error</strong>
+                        <p class="summary-copy" style="color: #c62828; margin-top: 4px;">${escapeHtml(record.ingestion_result.error)}</p>
+                    </div>
+                ` : ''}
+
                 <div class="review-actions">
                     <button class="secondary-btn" id="approve-draft-btn" type="button"${record.read_only ? ' disabled' : ''}>Approve metadata</button>
                     <button class="primary-btn" id="ingest-draft-btn" type="button"${record.read_only ? ' disabled' : ''}>Push to RAG</button>
@@ -344,6 +371,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const commodity = document.getElementById('draft-commodity')?.value?.trim() || fallbackRecord.commodity || fallbackRecord.suggested_commodity || '';
         const tags = (document.getElementById('draft-tags')?.value || (fallbackRecord.tags || []).join(',')).trim();
 
+        // Refresh UI state for in-progress
+        await loadRecords();
+
         try {
             const res = await fetch(`${apiBase}/api/knowledge/intake/${recordId}/ingest`, {
                 method: 'POST',
@@ -355,6 +385,31 @@ document.addEventListener('DOMContentLoaded', () => {
             state.currentDraft = { record: data.record, warnings: [] };
             renderDraft();
             await Promise.all([loadRecords(), loadKnowledgeStats(), loadTaxonomy()]);
+        } catch (error) {
+            alert(error.message);
+            await loadRecords(); // Ensure status is updated to 'error' in ledger
+        }
+    }
+
+    async function resetRecord(recordId) {
+        if (!confirm('Are you sure you want to reset this record? It will be removed from the RAG knowledge base and moved back to review state.')) {
+            return;
+        }
+
+        try {
+            const res = await fetch(`${apiBase}/api/knowledge/intake/${recordId}/reset`, {
+                method: 'POST',
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Reset failed');
+            
+            // If the reset record was the current draft, update it
+            if (state.currentDraft?.record?.id === recordId) {
+                state.currentDraft = { record: data.record, warnings: [] };
+                renderDraft();
+            }
+            
+            await Promise.all([loadRecords(), loadKnowledgeStats()]);
         } catch (error) {
             alert(error.message);
         }
