@@ -28,7 +28,7 @@ export interface ModelFallbackEntry {
 export const config = {
   port: process.env.PORT || 3000,
   ollama: {
-    host: process.env.OLLAMA_HOST || 'http://localhost:11434',
+    host: process.env.OLLAMA_HOST || 'http://127.0.0.1:11434',
     model: process.env.OLLAMA_MODEL || 'llama3.2:1b',
     keepAlive: process.env.OLLAMA_KEEP_ALIVE || '24h',
     // Performance tuning - smaller values = faster inference on CPU
