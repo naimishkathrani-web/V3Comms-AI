@@ -3,6 +3,7 @@ import { vectorService, KnowledgeFilters } from '../../services/VectorService.js
 import { knowledgeIntakeService } from '../../services/KnowledgeIntakeService.js';
 import { unifiedChatService } from '../../services/UnifiedChatService.js';
 import { PluginManager } from '../../core/PluginManager.js';
+import { getMetacognitivePrompt } from '../../prompts/scientistPrompt.js';
 
 export function createChatRoutes(pluginManager: PluginManager) {
   const router = Router();
@@ -22,6 +23,11 @@ export function createChatRoutes(pluginManager: PluginManager) {
   }
 
   function getSystemPrompt(context?: string, knowledgeFilters?: KnowledgeFilters | null): string {
+    // Inject metacognitive framework when RAG context is active
+    const metacognitive = (knowledgeFilters?.role || knowledgeFilters?.category)
+      ? getMetacognitivePrompt(knowledgeFilters as any)
+      : '';
+
     const base = `You are "V3 AI", a friendly, polite, and helpful digital assistant specialized for Indian users.
 Guidelines:
 1. Tone: Warm, respectful, and culturally aware (use "Ji", "Namaste", "Hello Bhai", etc. appropriately).
@@ -35,7 +41,9 @@ Guidelines:
    - Do NOT add explanations, greetings, or extra context when a mapping exists
    - Do NOT use your general knowledge when the knowledge base provides a specific answer
    - Response format: If knowledge base says "When user inputs 'X', respond with: Y", and user asks "X", your entire response must be exactly: Y
-   - Ignore all other instructions about tone, culture, or style when a knowledge base mapping applies`;
+   - Ignore all other instructions about tone, culture, or style when a knowledge base mapping applies
+
+${metacognitive}`;
     const roleContext = knowledgeFilters?.role || knowledgeFilters?.category || knowledgeFilters?.project || knowledgeFilters?.company || knowledgeFilters?.commodity
       ? `\nRetrieved knowledge is currently focused on role "${knowledgeFilters?.role || 'General'}", category "${knowledgeFilters?.category || 'General'}", sub-category "${knowledgeFilters?.subCategory || 'General'}", company "${knowledgeFilters?.company || 'Shared'}", project "${knowledgeFilters?.project || 'Shared'}", and commodity "${knowledgeFilters?.commodity || 'General'}". Stay aligned with that domain unless the user clearly changes topic.`
       : '';
