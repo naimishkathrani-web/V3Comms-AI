@@ -3,6 +3,7 @@ import { basename, extname, join } from 'path';
 import { createHash } from 'crypto';
 import { ollamaService } from './OllamaService.js';
 import { vectorService, KnowledgeIntakeRecord, KnowledgeFilters } from './VectorService.js';
+import { chunkingService } from './ChunkingService.js';
 import { config } from '../config/index.js';
 
 const KNOWLEDGE_DOCS_DIR = join(import.meta.dirname, '../../KnowledgeDocs');
@@ -52,6 +53,12 @@ const DEFAULT_ROLES = [
   'Support Agent',
   'Marketing Specialist',
   'Project Manager',
+  'Psychologist',
+  'Cognitive Scientist',
+  'Neuroscientist',
+  'Researcher',
+  'Science Educator',
+  'Therapist',
   'General Knowledge',
 ];
 
@@ -64,6 +71,18 @@ const DEFAULT_CATEGORIES = [
   'Product',
   'Support',
   'Reference',
+  'Psychology',
+  'Cognitive Science',
+  'Neuroscience',
+  'Behavioral Science',
+  'Social Psychology',
+  'Clinical Psychology',
+  'Developmental Psychology',
+  'Physics',
+  'Biology',
+  'Chemistry',
+  'Computer Science',
+  'Data Science',
   'General',
 ];
 
@@ -75,6 +94,22 @@ const DEFAULT_SUB_CATEGORIES = [
   'Trading Strategy',
   'Project Notes',
   'Company Research',
+  'Cognitive Biases',
+  'Decision Making',
+  'Memory & Learning',
+  'Emotion & Motivation',
+  'Social Cognition',
+  'Perception & Attention',
+  'Reasoning & Logic',
+  'Therapeutic Methods',
+  'Mental Health',
+  'Neural Networks',
+  'Brain Anatomy',
+  'Evolutionary Psychology',
+  'Developmental Stages',
+  'Quantum Mechanics',
+  'Organic Chemistry',
+  'Machine Learning',
   'General',
 ];
 
@@ -129,9 +164,9 @@ Rules for 'Psychologist' Mindset extraction:
 - "reasoningTrap": Common logical fallacies or cognitive biases related to this concept that a researcher should avoid.
 
 Rules:
-- "role" should be the most relevant audience or persona for this content, such as "Stock Trader", "Enterprise Architect", "Siebel Developer", or "General Knowledge".
-- "category" should be a short domain label, such as "Trading", "Architecture", "CRM", "Integration", "Support", or "General".
-- "subCategory" should be a more precise grouping such as "Technical Analysis", "Trading Strategy", "Market Research", "Project Notes", or "General".
+- "role" should be the most relevant audience or persona for this content, such as "Stock Trader", "Enterprise Architect", "Psychologist", "Cognitive Scientist", "Neuroscientist", "Researcher", "Science Educator", or "General Knowledge".
+- "category" should be a short domain label, such as "Trading", "Architecture", "CRM", "Integration", "Support", "Psychology", "Cognitive Science", "Neuroscience", "Behavioral Science", "Physics", "Biology", or "General".
+- "subCategory" should be a more precise grouping such as "Technical Analysis", "Trading Strategy", "Market Research", "Cognitive Biases", "Decision Making", "Memory & Learning", "Therapeutic Methods", "Neural Networks", or "General".
 - "company" should be set only if the content is clearly company-specific.
 - "project" should be set only if the content is clearly project-specific.
 - "commodity" should be set only if the content is about a specific commodity such as Gold or Crude Oil.
@@ -295,12 +330,12 @@ ${sample}`;
       }
 
       const html = await response.text();
-      const content = this.extractTextFromHtml(html);
+      const content = chunkingService.extractTextFromHtml(html);
       if (!content.trim()) {
         throw new Error('No readable text content found at the provided URL');
       }
 
-      const title = this.extractTitleFromHtml(html) || input.url;
+      const title = chunkingService.extractTitleFromHtml(html) || input.url;
       return this.createDraft({
         sourceType: 'url',
         title,
@@ -356,7 +391,7 @@ ${sample}`;
       const commodity = this.cleanValue(override?.commodity) || record.commodity || record.suggested_commodity;
       const tags = this.normalizeTags(override?.tags?.length ? override.tags : record.tags || record.suggested_tags || []);
 
-      const chunks = this.chunkText(content);
+      const chunks = chunkingService.chunkText(content);
       if (chunks.length === 0) throw new Error('No text content to embed');
 
       const metadata = {
@@ -486,102 +521,6 @@ ${sample}`;
 
   private hashContent(content: string): string {
     return createHash('sha256').update(content).digest('hex').slice(0, 16);
-  }
-
-  private chunkText(text: string, chunkSize: number = 800, overlap: number = 150): string[] {
-    const separators = ['\n\n\n', '\n\n', '\n', '. ', '! ', '? ', ' ', ''];
-    return this.recursiveSplit(text.trim(), chunkSize, overlap, separators, '');
-  }
-
-  private recursiveSplit(text: string, chunkSize: number, overlap: number, separators: string[], currentHeader: string): string[] {
-    const finalChunks: string[] = [];
-    
-    // Check if this block starts with a header
-    const headerMatch = text.match(/^(#+)\s+(.+)$|^\n+(#+)\s+(.+)$|/m);
-    let activeHeader = currentHeader;
-    
-    if (text.length <= chunkSize) {
-      return [activeHeader ? `[Section: ${activeHeader}]\n${text}` : text];
-    }
-
-    // Find the best separator to use
-    let separator = separators[separators.length - 1];
-    let newSeparators: string[] = [];
-
-    for (let i = 0; i < separators.length; i++) {
-      if (text.includes(separators[i])) {
-        separator = separators[i];
-        newSeparators = separators.slice(i + 1);
-        break;
-      }
-    }
-
-    const splits = text.split(separator);
-    let currentChunk = '';
-
-    for (const split of splits) {
-      // Check if the split itself contains a header
-      const innerHeaderMatch = split.match(/^#+\s+(.+)$/m);
-      if (innerHeaderMatch) {
-        activeHeader = innerHeaderMatch[1].trim();
-      }
-
-      const chunkPrefix = (activeHeader && !currentChunk.includes(`[Section: ${activeHeader}]`)) 
-        ? `[Section: ${activeHeader}]\n` 
-        : '';
-        
-      if (currentChunk.length + split.length + separator.length + chunkPrefix.length <= chunkSize) {
-        currentChunk += (currentChunk ? separator : '') + split;
-      } else {
-        if (currentChunk) {
-          finalChunks.push(currentChunk.trim());
-        }
-
-        if (split.length > chunkSize) {
-          const subChunks = this.recursiveSplit(split, chunkSize, overlap, newSeparators, activeHeader);
-          finalChunks.push(...subChunks.slice(0, -1));
-          currentChunk = subChunks[subChunks.length - 1];
-        } else {
-          currentChunk = split;
-        }
-      }
-    }
-
-    if (currentChunk) {
-      finalChunks.push(currentChunk.trim());
-    }
-
-    return finalChunks.filter(c => c.length > 10).map(c => {
-        // Ensure every chunk has the context if it was in a headered section
-        if (activeHeader && !c.includes(`[Section: ${activeHeader}]`)) {
-            return `[Section: ${activeHeader}]\n${c}`;
-        }
-        return c;
-    });
-  }
-
-  private extractTextFromHtml(html: string): string {
-    let text = html.replace(/<script[\s\S]*?<\/script>/gi, '');
-    text = text.replace(/<style[\s\S]*?<\/style>/gi, '');
-    text = text.replace(/<nav[\s\S]*?<\/nav>/gi, '');
-    text = text.replace(/<footer[\s\S]*?<\/footer>/gi, '');
-
-    // Tag headers before stripping
-    text = text.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, '\n\n\n# $1\n\n');
-    text = text.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, '\n\n## $1\n\n');
-    text = text.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, '\n\n### $1\n\n');
-    
-    text = text.replace(/<\/?(p|div|li|tr|br|hr|section|article)[^>]*>/gi, '\n');
-    text = text.replace(/<[^>]+>/g, ' ');
-    text = text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-    text = text.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ');
-    
-    return text.replace(/[ \t]+/g, ' ').replace(/\n{4,}/g, '\n\n\n').replace(/\n{3}/g, '\n\n\n').trim();
-  }
-
-  private extractTitleFromHtml(html: string): string | null {
-    const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    return match ? match[1].trim() : null;
   }
 }
 

@@ -1,6 +1,7 @@
 import { Client as SSHClient } from 'ssh2';
 import { Pool } from 'pg';
 import * as net from 'net';
+import { createHash } from 'crypto';
 import { config } from '../config/index.js';
 
 const SCHEMA = 'v3knowledge';
@@ -88,6 +89,11 @@ export class VectorService {
   private connected = false;
   private localPort: number;
 
+  // Embedding cache: hash(text) → embedding vector
+  private embeddingCache: Map<string, { embedding: number[]; ts: number }> = new Map();
+  private readonly EMBED_CACHE_MAX = 500;
+  private readonly EMBED_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
   constructor() {
     this.localPort = config.pg.port;
   }
@@ -106,7 +112,6 @@ export class VectorService {
       if (portInUse) {
         console.log(`[VectorService] Port ${this.localPort} already in use — assuming manual SSH tunnel is running`);
       } else if (config.ssh.host && config.pg.host === '127.0.0.1') {
-        console.log(`[VectorService] SSH config: host=${config.ssh.host}, port=${config.ssh.port}, user=${config.ssh.username}, password=${config.ssh.password ? '***' : 'EMPTY'}`);
         console.log(`[VectorService] Establishing SSH tunnel to ${config.ssh.host}:${config.ssh.port} as ${config.ssh.username}`);
         try {
           await this.createSSHTunnel();
@@ -121,11 +126,7 @@ export class VectorService {
       }
 
       // Step 2: PostgreSQL connection pool
-      const pwdLen = config.pg.password?.length || 0;
-      const pwdFirst = config.pg.password?.substring(0, 3) || 'N/A';
-      const pwdLast = config.pg.password?.substring(pwdLen - 3) || 'N/A';
       console.log(`[VectorService] PG config: host=${config.pg.host}, port=${this.localPort}, database=${config.pg.database}, user=${config.pg.user}`);
-      console.log(`[VectorService] PG password: length=${pwdLen}, first3=${pwdFirst}, last3=${pwdLast}`);
       this.pool = new Pool({
         host: config.pg.host,
         port: this.localPort,
@@ -389,7 +390,7 @@ export class VectorService {
         ADD COLUMN IF NOT EXISTS suggested_commodity TEXT
       `);
 
-      // Index for fast similarity search (IVFFlat — good for moderate dataset sizes)
+      // Index for fast similarity search (HNSW — works well at any dataset size, better recall than IVFFlat)
       // Only create if not exists (can't CREATE IF NOT EXISTS for indexes)
       const indexCheck = await client.query(`
         SELECT 1 FROM pg_indexes WHERE schemaname = '${SCHEMA}' AND indexname = 'chunks_embedding_idx'
@@ -397,7 +398,7 @@ export class VectorService {
       if (indexCheck.rows.length === 0) {
         await client.query(`
           CREATE INDEX chunks_embedding_idx ON ${SCHEMA}.chunks
-          USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)
+          USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)
         `);
       }
 
@@ -440,9 +441,34 @@ export class VectorService {
   }
 
   /**
-   * Generate embedding for a text using Ollama.
+   * Generate embedding for a text using Ollama, with LRU cache.
    */
   async embed(text: string): Promise<number[]> {
+    // Check cache first
+    const cacheKey = createHash('sha256').update(text).digest('hex').slice(0, 16);
+    const cached = this.embeddingCache.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < this.EMBED_CACHE_TTL_MS) {
+      return cached.embedding;
+    }
+
+    // Evict stale entries if cache is full
+    if (this.embeddingCache.size >= this.EMBED_CACHE_MAX) {
+      const now = Date.now();
+      for (const [key, val] of this.embeddingCache) {
+        if (now - val.ts > this.EMBED_CACHE_TTL_MS) {
+          this.embeddingCache.delete(key);
+        }
+      }
+      // If still full, delete oldest 20%
+      if (this.embeddingCache.size >= this.EMBED_CACHE_MAX) {
+        const entries = [...this.embeddingCache.entries()].sort((a, b) => a[1].ts - b[1].ts);
+        const toDelete = Math.floor(entries.length * 0.2);
+        for (let i = 0; i < toDelete; i++) {
+          this.embeddingCache.delete(entries[i][0]);
+        }
+      }
+    }
+
     const response = await fetch(`${config.ollama.host}/api/embeddings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -457,7 +483,11 @@ export class VectorService {
     }
 
     const data = await response.json() as { embedding: number[] };
-    return data.embedding;
+    const embedding = data.embedding;
+
+    // Store in cache
+    this.embeddingCache.set(cacheKey, { embedding, ts: Date.now() });
+    return embedding;
   }
 
   /**

@@ -2,3 +2,18 @@ node_modules/
 dist/
 .env
 .env.local
+*.key
+nvidia keys.txt
+KnowledgeDocs/Test Models Training.md
+
+# Sensitive config — API keys may be stored here
+model-config.json
+
+# OS / editor artifacts
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/

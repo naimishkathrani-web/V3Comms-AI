@@ -52,6 +52,7 @@ export const config = {
       }) as ModelFallbackEntry[],
   },
   maxConcurrentRequests: parseInt(process.env.MAX_CONCURRENT_REQUESTS || '1'),
+  apiAuthToken: process.env.API_AUTH_TOKEN || '', // Empty = auth disabled (dev mode)
   env: process.env.NODE_ENV || 'development',
   builderModel: process.env.BUILDER_MODEL || 'phi3.5:latest',
   embeddingModel: process.env.EMBEDDING_MODEL || 'nomic-embed-text',

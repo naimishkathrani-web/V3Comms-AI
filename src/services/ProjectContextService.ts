@@ -45,7 +45,7 @@ class ProjectContextService {
 
         CREATE INDEX IF NOT EXISTS idx_projects_parent ON v3knowledge.projects(parent_id);
         CREATE INDEX IF NOT EXISTS idx_projects_type ON v3knowledge.projects(node_type);
-        CREATE INDEX IF NOT EXISTS idx_projects_embedding ON v3knowledge.projects USING ivfflat (embedding vector_cosine_ops);
+        CREATE INDEX IF NOT EXISTS idx_projects_embedding ON v3knowledge.projects USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
       `);
 
       this.initialized = true;

@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import multer from 'multer';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from '../config/index.js';
@@ -15,6 +16,7 @@ import { modelConfigService } from '../services/ModelConfigService.js';
 import { cloudModelProvider } from '../services/CloudModelProvider.js';
 import { unifiedChatService } from '../services/UnifiedChatService.js';
 import { projectContextService } from '../services/ProjectContextService.js';
+import { authMiddleware, sanitizeModelConfig } from './middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,6 +41,19 @@ app.use(helmet({
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
+
+// Auth middleware on all /api routes
+app.use('/api', authMiddleware);
+
+// Rate limiting — 100 requests per minute per IP
+const limiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests, please try again later.' },
+});
+app.use('/api', limiter);
 
 // Initialize Plugins dynamically
 const setupSystem = async () => {
@@ -625,14 +640,20 @@ app.delete('/api/knowledge/documents', async (req: Request, res: Response) => {
  * Model Configuration API Endpoints
  */
 
-// Get full model config (cloud + local)
+// Get full model config (cloud + local) — API keys are sanitized
 app.get('/api/models', (_req: Request, res: Response) => {
-  res.json({ success: true, ...modelConfigService.getConfig() });
+  const cfg = modelConfigService.getConfig();
+  res.json({
+    success: true,
+    cloudModels: cfg.cloudModels.map(sanitizeModelConfig),
+    localModels: cfg.localModels.map(sanitizeModelConfig),
+    autoMode: cfg.autoMode,
+  });
 });
 
-// Get the active chain (ordered, enabled only)
+// Get the active chain (ordered, enabled only) — API keys sanitized
 app.get('/api/models/chain', (_req: Request, res: Response) => {
-  res.json({ success: true, chain: modelConfigService.getActiveChain() });
+  res.json({ success: true, chain: modelConfigService.getActiveChain().map(sanitizeModelConfig) });
 });
 
 // Add or update a cloud model

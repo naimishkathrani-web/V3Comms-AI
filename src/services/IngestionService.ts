@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'fs';
 import { createHash } from 'crypto';
 import { join, extname } from 'path';
 import { vectorService } from './VectorService.js';
+import { chunkingService } from './ChunkingService.js';
 import { config } from '../config/index.js';
 
 const KNOWLEDGE_DOCS_DIR = join(import.meta.dirname, '../../KnowledgeDocs');
@@ -72,7 +73,7 @@ export class IngestionService {
     }
 
     // Chunk the text
-    const chunks = this.chunkText(content);
+    const chunks = chunkingService.chunkText(content);
 
     if (chunks.length === 0) {
       return { source: relativePath, chunks: 0, status: 'error', message: 'No text content to embed' };
@@ -103,7 +104,7 @@ export class IngestionService {
       }
 
       const html = await response.text();
-      const text = this.extractTextFromHtml(html);
+      const text = chunkingService.extractTextFromHtml(html);
 
       if (!text.trim()) {
         return { source: url, chunks: 0, status: 'error', message: 'No text content extracted' };
@@ -116,8 +117,8 @@ export class IngestionService {
         return { source: url, chunks: 0, status: 'skipped', message: 'Unchanged since last ingestion' };
       }
 
-      const chunks = this.chunkText(text);
-      const title = this.extractTitleFromHtml(html) || url;
+      const chunks = chunkingService.chunkText(text);
+      const title = chunkingService.extractTitleFromHtml(html) || url;
 
       await vectorService.addDocument('url', url, title, chunks, contentHash);
 
@@ -138,91 +139,10 @@ export class IngestionService {
       return { source: path, chunks: 0, status: 'skipped', message: 'Unchanged' };
     }
 
-    const chunks = this.chunkText(text);
+    const chunks = chunkingService.chunkText(text);
     await vectorService.addDocument('text', path, title, chunks, contentHash);
 
     return { source: path, chunks: chunks.length, status: 'success' };
-  }
-
-  /**
-   * Split text into overlapping chunks for embedding.
-   * Uses ~200 character chunks with 50 character overlap for better granularity.
-   */
-  private chunkText(text: string, chunkSize: number = 200, overlap: number = 50): string[] {
-    // Normalize whitespace
-    const normalized = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
-
-    if (normalized.length <= chunkSize) {
-      return [normalized];
-    }
-
-    const chunks: string[] = [];
-    let start = 0;
-
-    while (start < normalized.length) {
-      let end = start + chunkSize;
-
-      // Try to break at sentence/paragraph boundary
-      if (end < normalized.length) {
-        const searchRange = normalized.slice(end - 50, end + 50);
-        const breakPoints = [
-          searchRange.lastIndexOf('\n\n'),
-          searchRange.lastIndexOf('. '),
-          searchRange.lastIndexOf('! '),
-          searchRange.lastIndexOf('? '),
-          searchRange.lastIndexOf('\n'),
-        ].filter(i => i >= 0);
-
-        if (breakPoints.length > 0) {
-          const bestBreak = Math.max(...breakPoints);
-          end = end - 50 + bestBreak + (searchRange[bestBreak] === '\n' ? 1 : 1);
-        }
-      }
-
-      const chunk = normalized.slice(start, end).trim();
-      if (chunk.length > 20) { // Skip very small chunks
-        chunks.push(chunk);
-      }
-
-      start = end - overlap;
-      if (start >= normalized.length) break;
-    }
-
-    return chunks;
-  }
-
-  /**
-   * Extract readable text from HTML.
-   */
-  private extractTextFromHtml(html: string): string {
-    // Remove script and style tags
-    let text = html.replace(/<script[\s\S]*?<\/script>/gi, '');
-    text = text.replace(/<style[\s\S]*?<\/style>/gi, '');
-    text = text.replace(/<nav[\s\S]*?<\/nav>/gi, '');
-    text = text.replace(/<footer[\s\S]*?<\/footer>/gi, '');
-
-    // Convert block elements to newlines
-    text = text.replace(/<\/?(p|div|h[1-6]|li|tr|br|hr)[^>]*>/gi, '\n');
-
-    // Remove all remaining HTML tags
-    text = text.replace(/<[^>]+>/g, ' ');
-
-    // Decode HTML entities
-    text = text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-    text = text.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ');
-
-    // Clean up whitespace
-    text = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-
-    return text;
-  }
-
-  /**
-   * Extract page title from HTML.
-   */
-  private extractTitleFromHtml(html: string): string | null {
-    const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    return match ? match[1].trim() : null;
   }
 
   /**
