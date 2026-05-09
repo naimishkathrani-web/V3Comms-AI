@@ -132,25 +132,34 @@ ${metacognitive}`;
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+        res.flushHeaders();
 
         if (knowledgeFilters) {
           res.write(`data: ${JSON.stringify({ type: 'knowledge', filters: knowledgeFilters, hits: knowledgeResults.length })}\n\n`);
         }
 
-        for await (const chunk of unifiedChatService.chatStream({
-          messages: [{ role: 'system', content: getSystemPrompt(context, knowledgeFilters) + ragContext }, ...messages],
-          model: model || 'auto',
-        })) {
-          if (chunk.startsWith('[META:')) {
-            try {
-              const meta = JSON.parse(chunk.slice(6, -1));
-              res.write(`data: ${JSON.stringify({ type: 'meta', model: meta.model, fallback: meta.fallback, originalModel: meta.originalModel })}\n\n`);
-            } catch {}
-          } else {
-            res.write(`data: ${JSON.stringify({ type: 'content', chunk })}\n\n`);
+        try {
+          for await (const chunk of unifiedChatService.chatStream({
+            messages: [{ role: 'system', content: getSystemPrompt(context, knowledgeFilters) + ragContext }, ...messages],
+            model: model || 'auto',
+          })) {
+            if (chunk.startsWith('[META:')) {
+              try {
+                const meta = JSON.parse(chunk.slice(6, -1));
+                res.write(`data: ${JSON.stringify({ type: 'meta', model: meta.model, fallback: meta.fallback, originalModel: meta.originalModel })}\n\n`);
+              } catch {}
+            } else {
+              res.write(`data: ${JSON.stringify({ type: 'content', chunk })}\n\n`);
+            }
           }
+          res.write('data: [DONE]\n\n');
+        } catch (streamErr: any) {
+          console.error('[Chat] Stream error:', streamErr.message);
+          // Headers already sent — send error as SSE event then close cleanly
+          res.write(`data: ${JSON.stringify({ type: 'error', error: streamErr.message })}\n\n`);
+          res.write('data: [DONE]\n\n');
         }
-        res.write('data: [DONE]\n\n');
         return res.end();
       }
 

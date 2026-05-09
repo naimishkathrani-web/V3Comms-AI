@@ -531,6 +531,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (parsed.type === 'content') {
                             textContent += parsed.chunk;
                             assistantMessage.textContent = textContent;
+                        } else if (parsed.type === 'error') {
+                            textContent += `\n[Error: ${parsed.error}]`;
+                            assistantMessage.textContent = textContent;
                         }
                     } catch (error) {
                         console.error(error);
