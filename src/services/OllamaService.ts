@@ -1,6 +1,8 @@
 import { Ollama } from 'ollama';
 import { config, ModelFallbackEntry } from '../config/index.js';
 
+const OLLAMA_CHAT_URL = `${config.ollama.host}/api/chat`;
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -93,11 +95,54 @@ export class OllamaService {
   }
 
   /**
-   * Chat with automatic model fallback via streaming.
-   * Tries models in priority order. If first token doesn't arrive within
-   * timeoutMs, aborts that model and falls back to the next one.
-   * Uses manual AsyncIterator control to race first token against timeout.
+   * Direct fetch-based streaming chat — bypasses the 'ollama' npm package
+   * which has a 'fetch failed' bug on Windows with Node.js undici.
    */
+  private async *directChatStream(model: string, messages: ChatMessage[]): AsyncGenerator<string> {
+    const body = JSON.stringify({
+      model,
+      messages,
+      stream: true,
+      keep_alive: config.ollama.keepAlive,
+      options: this.buildOptions(),
+    });
+
+    const response = await fetch(OLLAMA_CHAT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Ollama HTTP ${response.status}: ${await response.text()}`);
+    }
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // Ollama streams newline-delimited JSON
+      const lines = buffer.split('\n');
+      buffer = lines.pop()!; // keep incomplete line
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.message?.content) yield parsed.message.content;
+          if (parsed.done) return;
+        } catch {
+          // skip malformed lines
+        }
+      }
+    }
+  }
+
   public async *chatStreamWithFallback(messages: ChatMessage[], options: { model?: string } = {}): AsyncGenerator<string> {
     await this.acquireSlot();
     try {
@@ -112,16 +157,7 @@ export class OllamaService {
           chain = fullChain.slice(startIdx);
         } else {
           // Model not in chain — use it directly with no fallback
-          const response = await this.client.chat({
-            model: options.model,
-            messages,
-            stream: true,
-            keep_alive: config.ollama.keepAlive,
-            options: this.buildOptions(),
-          });
-          for await (const part of response) {
-            if (part.message?.content) yield part.message.content;
-          }
+          yield* this.directChatStream(options.model, messages);
           return;
         }
       }
@@ -134,16 +170,9 @@ export class OllamaService {
         console.log(`[OllamaService] Trying model: ${model} (timeout: ${timeoutMs}ms)`);
 
         try {
-          const stream = await this.client.chat({
-            model,
-            messages,
-            stream: true,
-            keep_alive: config.ollama.keepAlive,
-            options: this.buildOptions(),
-          });
-
-          // Get manual control over the async iterator
-          const iterator: AsyncIterator<any> = stream[Symbol.asyncIterator]();
+          // Use direct fetch streaming instead of ollama npm package
+          const stream = this.directChatStream(model, messages);
+          const iterator: AsyncIterator<string> = stream[Symbol.asyncIterator]();
 
           // Race: first .next() call vs timeout
           const firstResult = await Promise.race([
@@ -165,17 +194,13 @@ export class OllamaService {
           yield `[META:{"model":"${model}","fallback":${fallbackUsed},"originalModel":"${originalModel}"}]`;
 
           // Yield the first content chunk we already pulled
-          const firstValue = (firstResult as IteratorResult<any>).value;
-          if (firstValue?.message?.content) {
-            yield firstValue.message.content;
-          }
+          const firstValue = (firstResult as IteratorResult<string>).value;
+          if (firstValue) yield firstValue;
 
           // Continue streaming the rest
           let result = await iterator.next();
           while (!result.done) {
-            if (result.value?.message?.content) {
-              yield result.value.message.content;
-            }
+            yield result.value;
             result = await iterator.next();
           }
           return; // Success
@@ -278,19 +303,7 @@ export class OllamaService {
   public async *chatStream(messages: ChatMessage[], options: { model?: string } = {}): AsyncGenerator<string> {
     await this.acquireSlot();
     try {
-      const response = await this.client.chat({
-        model: options.model || this.defaultModel,
-        messages: messages,
-        stream: true,
-        keep_alive: config.ollama.keepAlive,
-        options: this.buildOptions(),
-      });
-
-      for await (const part of response) {
-        if (part.message && part.message.content) {
-          yield part.message.content;
-        }
-      }
+      yield* this.directChatStream(options.model || this.defaultModel, messages);
     } finally {
       this.releaseSlot();
     }
